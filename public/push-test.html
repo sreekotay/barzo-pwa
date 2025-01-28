@@ -45,7 +45,7 @@
                 
                 if (!registration) {
                     log('Registering service worker...');
-                    registration = await navigator.serviceWorker.register('/sw.js');
+                    registration = await navigator.serviceWorker.register('/service-worker.js');
                 }
                 
                 log('Getting existing push subscription...');

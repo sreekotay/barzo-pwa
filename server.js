@@ -3,6 +3,7 @@ const path = require('path');
 const helmet = require('helmet');
 const WORKER_URL = process.env.WORKER_URL || 'http://localhost:8787';
 const app = express();
+const fs = require('fs');
 
 // Environment variables
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -12,8 +13,39 @@ const IS_VERCEL = process.env.VERCEL || false;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization', // Add Authorization
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 };
+
+// Middleware
+app.use(express.json());
+
+// Handle both service workers
+app.get(['/service-worker.js'], (req, res) => {
+  res.set({
+    'Content-Type': 'application/javascript',
+    'Service-Worker-Allowed': '/',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+
+  // Fix: Use the actual path instead of a boolean
+  const filePath = path.join(__dirname, 'public', 'service-worker.js');
+  res.sendFile(filePath);
+});
+
+// Move this BEFORE the helmet middleware
+app.use(express.static('public', {
+  maxAge: NODE_ENV === 'production' ? '1d' : 0,
+  setHeaders: (res, path) => {
+    if (path.endsWith('service-worker.js')) {
+      res.set('Service-Worker-Allowed', '/');
+    }
+  }
+}));
 
 // Security headers middleware using helmet
 app.use(helmet({
@@ -25,7 +57,10 @@ app.use(helmet({
         "'unsafe-inline'",
         "'unsafe-eval'",
         "'unsafe-hashes'",
-        "https://cdn.tailwindcss.com"
+        "https://cdn.tailwindcss.com",
+        "https://js.pusher.com",
+        "https://js.pusher.com/beams/",
+        "https:"
       ],
       scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: [
@@ -37,17 +72,26 @@ app.use(helmet({
       connectSrc: [
         "'self'",
         "https://cdn.tailwindcss.com",
+        "https://js.pusher.com",
+        "https://js.pusher.com/beams/",
         IS_VERCEL ? "https://*.vercel.app" : "ws://localhost:*",
         IS_VERCEL ? "wss://*.vercel.app" : "ws://0.0.0.0:*",
         WORKER_URL,
-        'http://localhost:8787' // Add local worker URL explicitly
+        'http://localhost:8787'
       ],
       fontSrc: ["'self'", "data:", "https://cdn.tailwindcss.com"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       frameSrc: ["'none'"],
       formAction: ["'self'"],
-      workerSrc: ["'self'", "blob:", "'unsafe-inline'"],
+      workerSrc: [
+        "'self'", 
+        "blob:", 
+        "'unsafe-inline'", 
+        "'unsafe-eval'",
+        "https:",
+        "http://localhost:3000"
+      ],
       manifestSrc: ["'self'"]
     }
   },
@@ -88,12 +132,6 @@ app.use((req, res, next) => {
 
   next();
 });
-
-// Middleware
-app.use(express.json());
-app.use(express.static('public', {
-  maxAge: NODE_ENV === 'production' ? '1d' : 0
-}));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -164,7 +202,12 @@ app.post('/api/notify', async (req, res, next) => {
 
 // Serve index.html for all other routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const filePath = path.join(__dirname, 'public', req.path || '');
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 // Export the Express API for Vercel

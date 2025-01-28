@@ -3,7 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' 'unsafe-hashes' https://cdn.tailwindcss.com https://js.pusher.com;
+        worker-src 'self' https://js.pusher.com blob:;
+        child-src 'self' https://js.pusher.com blob:;
+    ">
     <title>Barzo PWA</title>
+    <script src="push-notifications-cdn.js"></script>
+    <script>
+        // Add service worker registration logging
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js?v=' + Date.now())
+                .then(registration => {
+                    console.log('Service Worker registered with scope:', registration.scope);
+                    return beamsClient.start();
+                })
+                .then(() => beamsClient.addDeviceInterest('hello'))
+                .then(() => console.log('Successfully registered and subscribed!'))
+                .catch(error => {
+                    console.error('Service Worker or Pusher Beams error:', error);
+                    document.getElementById('loading').textContent = 'Failed to initialize push notifications. Please try again.';
+                });
+        }
+
+        const beamsClient = new PusherPushNotifications.Client({
+            instanceId: '63944152-42e3-4245-ac4b-99f069829fff',
+        });
+    </script>
     <script>
         async function init() {
             // Check if we have an authToken in the URL
@@ -27,20 +53,11 @@
                 const userInfo = JSON.parse(decodeURIComponent(authToken));
                 console.log(userInfo);
                 let userId = userInfo?.token?.identity.userId;
-                loading.innerHTML = userId;
-                console.log("userId", userId)
                 
-                localStorage.setItem('userIdKey', `subscription:${userId}`);
                 
-                // Remove the auth token from URL and redirect to main app
-                if (false) {
-                    const cleanUrl = new URL(window.location.href);
-                    cleanUrl.searchParams.delete('authToken');
-                    window.location.href = cleanUrl.pathname;
-                }
+                
             } catch (error) {
                 console.error('Authentication error:', error);
-                // You might want to show an error message to the user
                 document.getElementById('loading').textContent = 'Authentication failed. Please try again.';
             }
         }
@@ -48,6 +65,22 @@
         // Run init when page loads
         window.addEventListener('load', init);
     </script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 20px;
+            line-height: 1.5;
+        }
+        input {
+            font-family: monospace;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #666;
+        }
+    </style>
 </head>
 <body>
     <div id="loading">

@@ -62,7 +62,7 @@ id = "your_production_id"
 ├── public/              # Static files
 │   ├── index.html      # Main PWA entry
 │   ├── manifest.json   # PWA manifest
-│   ├── sw.js          # Service Worker
+│   ├── service-worker.js          # Service Worker
 │   └── icons/         # PWA icons
 ├── worker/            # Cloudflare Worker
 │   └── index.js      # Worker entry point
