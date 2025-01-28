@@ -1,0 +1,189 @@
+const express = require('express');
+const webpush = require('web-push');
+const path = require('path');
+const helmet = require('helmet');
+const WORKER_URL = process.env.WORKER_URL || 'http://localhost:8787';
+const app = express();
+
+// Environment variables
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_VERCEL = process.env.VERCEL || false;
+
+// Security headers middleware using helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'", 
+        "'unsafe-inline'", 
+        "'unsafe-eval'",
+        "https://cdn.tailwindcss.com"
+      ],
+      styleSrc: [
+        "'self'", 
+        "'unsafe-inline'", 
+        "https://cdn.tailwindcss.com"
+      ],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: [
+        "'self'",
+        "https://cdn.tailwindcss.com",
+        IS_VERCEL ? "https://*.vercel.app" : "ws://localhost:*",
+        IS_VERCEL ? "wss://*.vercel.app" : "ws://0.0.0.0:*"
+      ],
+      fontSrc: ["'self'", "data:", "https://cdn.tailwindcss.com"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      formAction: ["'self'"],
+      workerSrc: ["'self'", "blob:"],
+      manifestSrc: ["'self'"],
+      upgradeInsecureRequests: []
+    }
+  },
+  crossOriginEmbedderPolicy: { policy: "credentialless" },
+  crossOriginOpenerPolicy: { policy: "same-origin" },
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  dnsPrefetchControl: { allow: false },
+  frameguard: { action: "deny" },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+  ieNoOpen: true,
+  noSniff: true,
+  originAgentCluster: true,
+  permittedCrossDomainPolicies: { permittedPolicies: "none" },
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  xssFilter: true
+}));
+
+// Additional custom security headers
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 
+    'geolocation=(self), ' +
+    'camera=(), ' +
+    'microphone=(), ' +
+    'payment=(), ' +
+    'usb=(), ' +
+    'magnetometer=(), ' +
+    'accelerometer=(), ' +
+    'gyroscope=(), ' +
+    'notifications=(self)'
+  );
+
+  if (NODE_ENV === 'production') {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+  }
+
+  next();
+});
+
+// Replace these with your VAPID keys
+const vapidKeys = {
+  publicKey: process.env.VAPID_PUBLIC_KEY || 'BDvq04Lz9f3hxRmwHc7WP2jNE_r9qbE3_UVbXYdyZKJPC6jVSY9ZnWDsY7Y07Yf2hYbBxNmOHhxvPnB4YBw0Qr8',
+  privateKey: process.env.VAPID_PRIVATE_KEY || ''
+};
+
+webpush.setVapidDetails(
+  'mailto:admin@barzo.app',
+  vapidKeys.publicKey,
+  vapidKeys.privateKey
+);
+
+// Middleware
+app.use(express.json());
+app.use(express.static('public', {
+  maxAge: NODE_ENV === 'production' ? '1d' : 0
+}));
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    error: NODE_ENV === 'development' ? err.message : 'Internal Server Error'
+  });
+});
+
+// API Routes
+app.get('/api/vapidPublicKey', (req, res) => {
+  res.json({ publicKey: vapidKeys.publicKey });
+});
+
+app.post('/api/subscribe', async (req, res) => {
+  try {
+    const subscription = req.body;
+    if (!subscription || !subscription.endpoint) {
+      return res.status(400).json({ error: 'Invalid subscription data' });
+    }
+    const response = await fetch(`${WORKER_URL}/api/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(subscription)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    res.status(201).json({ message: 'Subscription added successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/notify', async (req, res) => {
+  try {
+    const response = await fetch(`${WORKER_URL}/api/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: req.body.message })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Serve index.html for all other routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Export the Express API for Vercel
+module.exports = app;
+
+// Start server only in development
+if (NODE_ENV === 'development') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\nServer running in ${NODE_ENV} mode`);
+    console.log(`Local:            http://localhost:${PORT}`);
+    
+    if (require.main === module) {
+      const os = require('os');
+      const interfaces = os.networkInterfaces();
+      Object.keys(interfaces).forEach((iface) => {
+        interfaces[iface].forEach((details) => {
+          if (details.family === 'IPv4' && !details.internal) {
+            console.log(`Local Network:     http://${details.address}:${PORT}`);
+          }
+        });
+      });
+    }
+    
+    console.log(`\nPublic VAPID key: ${vapidKeys.publicKey}`);
+  });
+}
+
+// Error handlers
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  if (!IS_VERCEL) process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+  if (!IS_VERCEL) process.exit(1);
+}); 

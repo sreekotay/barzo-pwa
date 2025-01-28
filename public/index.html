@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barzo</title>
+    <meta name="theme-color" content="#ef4444">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" href="/icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4">
+    <div class="max-w-md w-full space-y-8 text-center">
+        <!-- Logo/Icon -->
+        <div class="mx-auto w-24 h-24 bg-red-500 rounded-xl shadow-lg flex items-center justify-center">
+            <img src="/icon-192.png" alt="Barzo" class="w-16 h-16">
+        </div>
+
+        <!-- Title -->
+        <h1 class="text-3xl font-bold text-gray-900">Welcome to Barzo</h1>
+
+        <!-- Initial Explanation -->
+        <div id="permission-explanation" class="bg-white rounded-lg shadow p-6 text-left space-y-4">
+            <p class="text-gray-700">To provide the best experience, Barzo needs:</p>
+            <ul class="space-y-2 text-gray-600 pl-4">
+                <li class="flex items-start">
+                    <span class="inline-block w-2 h-2 bg-red-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                    <span>
+                        <strong>Location access</strong> - to show you relevant content nearby
+                    </span>
+                </li>
+                <li class="flex items-start">
+                    <span class="inline-block w-2 h-2 bg-red-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                    <span>
+                        <strong>Notifications</strong> - to keep you updated about messages and events
+                    </span>
+                </li>
+            </ul>
+            <button id="start-permission-flow" class="w-full mt-4 py-3 px-4 bg-red-500 text-white rounded-lg font-medium shadow-lg hover:bg-red-600 transition-colors">
+                Get Started
+            </button>
+        </div>
+        
+        <!-- Permissions Status (initially hidden) -->
+        <div id="permission-status" class="space-y-4 bg-white rounded-lg shadow p-6 hidden">
+            <div class="flex items-center justify-between">
+                <span class="text-gray-700">Location Access</span>
+                <span id="location-status" class="text-gray-500">⏳ Waiting...</span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-gray-700">Notifications</span>
+                <span id="notification-status" class="text-gray-500">⏳ Waiting...</span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-gray-700">Installation</span>
+                <span id="install-status" class="text-gray-500">⏳ Waiting...</span>
+            </div>
+        </div>
+
+        <!-- Action Button -->
+        <button id="action-button" class="w-full py-3 px-4 bg-red-500 text-white rounded-lg font-medium shadow-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed hidden">
+            Continue to App
+        </button>
+    </div>
+
+    <script>
+        let deferredPrompt = null;
+        const permissionExplanation = document.getElementById('permission-explanation');
+        const permissionStatus = document.getElementById('permission-status');
+        const startPermissionFlow = document.getElementById('start-permission-flow');
+        const locationStatus = document.getElementById('location-status');
+        const notificationStatus = document.getElementById('notification-status');
+        const installStatus = document.getElementById('install-status');
+        const actionButton = document.getElementById('action-button');
+
+        // Check if already installed
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            window.location.href = '/barzo.html';
+        }
+
+        // Add this helper function at the top of the script
+        function isIOS() {
+            return [
+                'iPad Simulator',
+                'iPhone Simulator',
+                'iPod Simulator',
+                'iPad',
+                'iPhone',
+                'iPod'
+            ].includes(navigator.platform)
+            // iPad on iOS 13 detection
+            || (navigator.userAgent.includes("Mac") && "ontouchend" in document);
+        }
+
+        // Update the checkExistingPermissions function
+        async function checkExistingPermissions() {
+            let needsPermissions = false;
+
+            // Check location
+            const locationResult = await navigator.permissions.query({ name: 'geolocation' });
+            if (locationResult.state !== 'granted') {
+                needsPermissions = true;
+            }
+
+            // Check notifications only if not on iOS
+            if (!isIOS()) {
+                if ('Notification' in window && Notification.permission !== 'granted') {
+                    needsPermissions = true;
+                }
+            }
+
+            if (!needsPermissions) {
+                permissionExplanation.classList.add('hidden');
+                permissionStatus.classList.remove('hidden');
+                locationStatus.innerHTML = '✅ Granted';
+                // Only show notification status if not on iOS
+                if (!isIOS()) {
+                    notificationStatus.innerHTML = '✅ Granted';
+                } else {
+                    notificationStatus.parentElement.style.display = 'none';
+                }
+                checkAllPermissions();
+            }
+        }
+
+        function updateInstallStatus() {
+            if (isIOS()) {
+                installStatus.innerHTML = '📱 Add to Home Screen';
+                // Add iOS-specific instructions
+                const helpText = document.createElement('div');
+                helpText.id = 'ios-install-help';
+                helpText.className = 'mt-2 text-xs text-gray-600 text-left';
+                helpText.innerHTML = `
+                    To install on iOS:
+                    <ol class="list-decimal list-inside mt-1 space-y-1">
+                        <li>Tap the share button <span class="inline-block w-5 h-5 align-middle">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M13 3v1.27a.75.75 0 001.5 0V3h2.25A2.25 2.25 0 0119 5.25v2.628a.75.75 0 01-1.5 0V5.25a.75.75 0 00-.75-.75H3.75a.75.75 0 00-.75.75v11.5c0 .414.336.75.75.75h11.5a.75.75 0 00.75-.75v-2.628a.75.75 0 011.5 0V18A2.25 2.25 0 0115.75 20H3.75A2.25 2.25 0 011 17.75V5.25A2.25 2.25 0 013.75 3H13zm4.994 7.497a.75.75 0 00-1.488-.15l-.001.018a.75.75 0 001.489.13zm-1.247 1.247a.75.75 0 00.001-.001l-.001.001zm.374-1.374a.75.75 0 00.001-.001l-.001.001zM6 6h.008v.008H6V6z" />
+                            </svg>
+                        </span></li>
+                        <li>Scroll and tap "Add to Home Screen"</li>
+                        <li>Tap "Add" in the top right</li>
+                    </ol>
+                `;
+                installStatus.parentElement.appendChild(helpText);
+            } else if (deferredPrompt) {
+                // Mobile-style install available
+                installStatus.innerHTML = '🔄 Ready to install';
+            } else if (!window.matchMedia('(display-mode: standalone)').matches) {
+                // Show desktop install hint
+                installStatus.innerHTML = '💡 Look for install icon in browser address bar';
+            }
+        }
+
+        // Handle install prompt
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            updateInstallStatus();
+            checkAllPermissions();
+        });
+
+        startPermissionFlow.addEventListener('click', () => {
+            permissionExplanation.classList.add('hidden');
+            permissionStatus.classList.remove('hidden');
+            init();
+        });
+
+        async function requestLocationPermission() {
+            try {
+                const result = await navigator.permissions.query({ name: 'geolocation' });
+                if (result.state === 'granted') {
+                    locationStatus.innerHTML = '✅ Granted';
+                    return true;
+                } else if (result.state === 'prompt') {
+                    // Request permission with low accuracy options
+                    try {
+                        await new Promise((resolve, reject) => {
+                            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                                enableHighAccuracy: false,
+                                timeout: 5000,
+                                maximumAge: 300000 // 5 minutes
+                            });
+                        });
+                        locationStatus.innerHTML = '✅ Granted';
+                        return true;
+                    } catch (geoError) {
+                        if (geoError.code === 1) { // PERMISSION_DENIED
+                            locationStatus.innerHTML = '❌ Permission denied';
+                        } else if (geoError.code === 3) { // TIMEOUT
+                            locationStatus.innerHTML = '❌ Request timed out';
+                        } else {
+                            locationStatus.innerHTML = '❌ Error getting location';
+                        }
+                        return false;
+                    }
+                } else {
+                    locationStatus.innerHTML = '❌ Permission denied';
+                    return false;
+                }
+            } catch (error) {
+                console.error('Error requesting location permission:', error);
+                locationStatus.innerHTML = '❌ System error';
+                return false;
+            }
+        }
+
+        // Add these helper functions at the top
+        function getStoredSubscription() {
+            try {
+                const stored = localStorage.getItem('push-subscription');
+                if (!stored) return null;
+                
+                const { subscription, timestamp } = JSON.parse(stored);
+                const age = Date.now() - timestamp;
+                
+                // Check if older than 6 months
+                if (age > 180 * 24 * 60 * 60 * 1000) {
+                    localStorage.removeItem('push-subscription');
+                    return null;
+                }
+                
+                return subscription;
+            } catch (error) {
+                console.error('Error reading stored subscription:', error);
+                return null;
+            }
+        }
+
+        function storeSubscription(subscription) {
+            try {
+                localStorage.setItem('push-subscription', JSON.stringify({
+                    subscription,
+                    timestamp: Date.now()
+                }));
+            } catch (error) {
+                console.error('Error storing subscription:', error);
+            }
+        }
+
+        // Update the subscribeToPush function
+        async function subscribeToPush() {
+            try {
+                const registration = await navigator.serviceWorker.ready;
+                
+                // Check for existing subscription in localStorage
+                const storedSubscription = getStoredSubscription();
+                if (storedSubscription) {
+                    try {
+                        // Verify the stored subscription is still valid
+                        const pushSubscription = await registration.pushManager.getSubscription();
+                        if (pushSubscription?.endpoint === storedSubscription.endpoint) {
+                            console.log('Using existing push subscription');
+                            return true;
+                        }
+                    } catch (error) {
+                        console.log('Stored subscription invalid, creating new one');
+                    }
+                }
+                
+                // Get VAPID public key from server
+                const response = await fetch('/api/vapidPublicKey');
+                const { publicKey } = await response.json();
+
+                // Convert VAPID key to Uint8Array
+                const convertedVapidKey = urlBase64ToUint8Array(publicKey);
+
+                // Subscribe to push notifications
+                const subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: convertedVapidKey
+                });
+
+                // Send subscription to server
+                await fetch('/api/subscribe', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(subscription)
+                });
+
+                // Store the new subscription
+                storeSubscription(subscription);
+
+                console.log('Push notification subscription successful');
+                return true;
+            } catch (err) {
+                console.error('Error subscribing to push notifications:', err);
+                return false;
+            }
+        }
+
+        // Helper function to convert VAPID key
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding)
+                .replace(/\-/g, '+')
+                .replace(/_/g, '/');
+
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        // Update the requestNotificationPermission function
+        async function requestNotificationPermission() {
+            try {
+                if (!('Notification' in window)) {
+                    notificationStatus.innerHTML = '❌ Not supported';
+                    return false;
+                }
+
+                const permission = await Notification.requestPermission();
+                
+                if (permission === 'granted') {
+                    notificationStatus.innerHTML = '✅ Granted';
+                    // Subscribe to push notifications
+                    const pushSubscribed = await subscribeToPush();
+                    return pushSubscribed;
+                } else {
+                    // Clear any stored subscription if permission is denied
+                    localStorage.removeItem('push-subscription');
+                    notificationStatus.innerHTML = '❌ Permission denied';
+                    return false;
+                }
+            } catch (error) {
+                console.error('Error requesting notification permission:', error);
+                notificationStatus.innerHTML = '❌ System error';
+                return false;
+            }
+        }
+
+        function checkAllPermissions() {
+            const hasLocation = locationStatus.innerHTML.includes('✅');
+            const hasNotifications = !isIOS() ? notificationStatus.innerHTML.includes('✅') : true;
+            const hasDenied = locationStatus.innerHTML.includes('denied') || 
+                              (!isIOS() && notificationStatus.innerHTML.includes('denied'));
+
+            // Only show action button if we're past the initial explanation
+            if (permissionExplanation.classList.contains('hidden')) {
+                actionButton.classList.remove('hidden');
+
+                // Remove any existing help text
+                const existingHelp = document.getElementById('permission-help');
+                if (existingHelp) existingHelp.remove();
+
+                // If we have any errors or blocked permissions
+                if (locationStatus.innerHTML.includes('❌') || (!isIOS() && notificationStatus.innerHTML.includes('❌'))) {
+                    if (hasDenied) {
+                        actionButton.textContent = 'Fix permissions and refresh';
+                        // Add help text for denied permissions
+                        const helpText = document.createElement('div');
+                        helpText.id = 'permission-help';
+                        helpText.className = 'mt-4 text-sm text-gray-600';
+                        helpText.innerHTML = `
+                            To fix permissions:
+                            <ol class="list-decimal list-inside mt-2 space-y-1">
+                                <li>Click the lock/info icon in your browser's address bar</li>
+                                <li>Find the denied permissions</li>
+                                <li>Change them to "Allow"</li>
+                                <li>Click the button above to refresh</li>
+                            </ol>
+                        `;
+                        actionButton.parentNode.insertBefore(helpText, actionButton.nextSibling);
+                    } else {
+                        actionButton.textContent = 'Try again';
+                    }
+                    
+                    actionButton.addEventListener('click', () => {
+                        window.location.reload();
+                    });
+                    return;
+                }
+
+                // Otherwise, show install/continue button
+                actionButton.textContent = isIOS() ? 'Add to Home Screen' : 'Continue to App';
+                if (isIOS()) {
+                    actionButton.addEventListener('click', () => {
+                        document.getElementById('ios-install-help')?.scrollIntoView({ behavior: 'smooth' });
+                    });
+                }
+                if (deferredPrompt) {
+                    actionButton.addEventListener('click', async () => {
+                        await deferredPrompt.prompt();
+                        const result = await deferredPrompt.userChoice;
+                        if (result.outcome === 'accepted') {
+                            installStatus.innerHTML = '✅ Installed';
+                            window.location.href = '/barzo.html';
+                        } else {
+                            installStatus.innerHTML = '❌ Declined';
+                        }
+                        deferredPrompt = null;
+                    });
+                }
+            }
+        }
+
+        // Update the init function
+        async function init() {
+            // Request location first
+            const hasLocation = requestLocationPermission().then(checkAllPermissions);
+            if (!hasLocation) return;
+
+            // Request notification permission only if not on iOS
+            if (!isIOS()) {
+                setTimeout(() => {
+                    requestNotificationPermission().then(checkAllPermissions);
+                }, 1000);
+            } else {
+                // Hide notification status row on iOS
+                notificationStatus.parentElement.style.display = 'none';
+            }
+        }
+
+        // Start by checking existing permissions
+        checkExistingPermissions();
+
+        // Call on initial load too
+        updateInstallStatus();
+    </script>
+</body>
