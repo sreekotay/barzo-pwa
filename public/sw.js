@@ -1,38 +1,24 @@
 // Push event - handle incoming push notifications
 self.addEventListener('push', event => {
-  const options = {
-    body: event.data.text(),
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    vibrate: [100, 50, 100],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1
-    },
-    actions: [
-      {
-        action: 'explore',
-        title: 'View message',
-      },
-      {
-        action: 'close',
-        title: 'Close',
-      },
-    ]
-  };
-
+  const data = event.data.json();
+  
   event.waitUntil(
-    self.registration.showNotification('Barzo', options)
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: data.icon,
+      badge: data.badge,
+      data: data.data
+    })
   );
 });
 
 // Notification click event
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-
-  if (event.action === 'explore') {
+  
+  if (event.notification.data && event.notification.data.url) {
     event.waitUntil(
-      clients.openWindow('/chat.html')
+      clients.openWindow(event.notification.data.url)
     );
   }
 }); 

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barzo PWA</title>
+    <script>
+        async function init() {
+            // Check if we have an authToken in the URL
+            const params = new URLSearchParams(window.location.search);
+            const authToken = params.get('authToken');
+
+            if (!authToken) {
+                // No auth token, redirect to auth
+                const currentUrl = encodeURIComponent(window.location.href);
+                const navUrl = `https://chat.barzo.work/otp.html?redirect=${currentUrl}` + '?authToken=${authToken}';
+                console.log(navUrl);
+                window.location.href = navUrl;
+                return;
+            }
+
+            try {
+                // Store the auth token
+                localStorage.setItem('authToken', authToken);
+                
+                // Parse user info and store subscription key
+                const userInfo = JSON.parse(decodeURIComponent(authToken));
+                console.log(userInfo);
+                let userId = userInfo?.token?.identity.userId;
+                loading.innerHTML = userId;
+                console.log("userId", userId)
+                
+                localStorage.setItem('userIdKey', `subscription:${userId}`);
+                
+                // Remove the auth token from URL and redirect to main app
+                if (false) {
+                    const cleanUrl = new URL(window.location.href);
+                    cleanUrl.searchParams.delete('authToken');
+                    window.location.href = cleanUrl.pathname;
+                }
+            } catch (error) {
+                console.error('Authentication error:', error);
+                // You might want to show an error message to the user
+                document.getElementById('loading').textContent = 'Authentication failed. Please try again.';
+            }
+        }
+
+        // Run init when page loads
+        window.addEventListener('load', init);
+    </script>
+</head>
+<body>
+    <div id="loading">
+        Loading...
+    </div>
+</body>
+</html> 

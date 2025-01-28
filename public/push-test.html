@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barzo Push Test</title>
+    <style>
+        body {
+            max-width: 600px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            font-family: system-ui, sans-serif;
+        }
+        button {
+            padding: 0.5rem 1rem;
+            margin: 0.5rem 0;
+            display: block;
+        }
+        #status {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: #f0f0f0;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+    </style>
+    <script>
+        let status; // Declare status globally
+        
+        function log(message) {
+            console.log(message);
+            if (status) {
+                status.textContent += '\n' + message;
+            }
+        }
+
+        async function subscribe() {
+            try {
+                if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                    throw new Error('Push notifications not supported');
+                }
+
+                log('Checking service worker registration...');
+                let registration = await navigator.serviceWorker.getRegistration();
+                
+                if (!registration) {
+                    log('Registering service worker...');
+                    registration = await navigator.serviceWorker.register('/sw.js');
+                }
+                
+                log('Getting existing push subscription...');
+                let subscription = await registration.pushManager.getSubscription();
+                
+                if (!subscription) {
+                    log('Getting VAPID key...');
+                    const vapidKey = await getVapidKey();
+                    
+                    log('Creating new push subscription...');
+                    subscription = await registration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: vapidKey
+                    });
+                }
+
+                log('Sending subscription to server...');
+                const response = await fetch('/api/subscribe', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                    },
+                    body: JSON.stringify(subscription)
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    const userIdKey = localStorage.getItem('userIdKey');
+                    log(`Subscribed! Your subscription key: ${userIdKey}`);
+                    document.getElementById('key').value = userIdKey;
+                } else {
+                    throw new Error(result.error || 'Subscription failed');
+                }
+            } catch (error) {
+                console.error('Failed to subscribe:', error);
+                log(`Failed to subscribe: ${error.message}`);
+            }
+        }
+
+        async function testPush() {
+            const key = document.getElementById('key').value;
+            try {
+                const response = await fetch('/api/notify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        key,
+                        message: 'Test notification from Barzo!' 
+                    })
+                });
+                const result = await response.json();
+                log(`Push result: ${JSON.stringify(result)}`);
+            } catch (error) {
+                log(`Push failed: ${error.message}`);
+            }
+        }
+
+        async function getVapidKey() {
+            log('Fetching VAPID key...');
+            try {
+                const response = await fetch('/api/vapidPublicKey');
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to get VAPID key');
+                }
+                const { publicKey } = await response.json();
+                if (!publicKey) {
+                    throw new Error('No VAPID key returned');
+                }
+                log('Got VAPID key');
+                return urlBase64ToUint8Array(publicKey);
+            } catch (error) {
+                log(`VAPID key error: ${error.message}`);
+                throw error;
+            }
+        }
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding)
+                .replace(/\-/g, '+')
+                .replace(/_/g, '/');
+
+            const rawData = atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        // Add event listeners when DOM is loaded
+        window.addEventListener('load', () => {
+            // Initialize status element
+            status = document.getElementById('status');
+            
+            document.getElementById('subscribeBtn').addEventListener('click', subscribe);
+            document.getElementById('testPushBtn').addEventListener('click', testPush);
+            
+            // Check if we're already subscribed
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistration()
+                    .then(registration => {
+                        if (registration) {
+                            return registration.pushManager.getSubscription();
+                        }
+                    })
+                    .then(subscription => {
+                        if (subscription) {
+                            log('Already subscribed to push notifications');
+                        }
+                    })
+                    .catch(error => log(`Error checking subscription: ${error.message}`));
+            }
+        });
+    </script>
+</head>
+<body>
+    <h1>Barzo Push Test</h1>
+    <div id="status">Ready to test push notifications</div>
+    
+    <button id="subscribeBtn">Subscribe</button>
+    
+    <div>
+        <input type="text" id="key" placeholder="Enter subscription key">
+        <button id="testPushBtn">Test Push</button>
+    </div>
+</body>
+</html> 

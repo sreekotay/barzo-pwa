@@ -1,5 +1,4 @@
 const express = require('express');
-const webpush = require('web-push');
 const path = require('path');
 const helmet = require('helmet');
 const WORKER_URL = process.env.WORKER_URL || 'http://localhost:8787';
@@ -9,6 +8,13 @@ const app = express();
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const IS_VERCEL = process.env.VERCEL || false;
 
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization', // Add Authorization
+};
+
 // Security headers middleware using helmet
 app.use(helmet({
   contentSecurityPolicy: {
@@ -16,10 +22,12 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: [
         "'self'", 
-        "'unsafe-inline'", 
+        "'unsafe-inline'",
         "'unsafe-eval'",
+        "'unsafe-hashes'",
         "https://cdn.tailwindcss.com"
       ],
+      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: [
         "'self'", 
         "'unsafe-inline'", 
@@ -30,16 +38,17 @@ app.use(helmet({
         "'self'",
         "https://cdn.tailwindcss.com",
         IS_VERCEL ? "https://*.vercel.app" : "ws://localhost:*",
-        IS_VERCEL ? "wss://*.vercel.app" : "ws://0.0.0.0:*"
+        IS_VERCEL ? "wss://*.vercel.app" : "ws://0.0.0.0:*",
+        WORKER_URL,
+        'http://localhost:8787' // Add local worker URL explicitly
       ],
       fontSrc: ["'self'", "data:", "https://cdn.tailwindcss.com"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       frameSrc: ["'none'"],
       formAction: ["'self'"],
-      workerSrc: ["'self'", "blob:"],
-      manifestSrc: ["'self'"],
-      upgradeInsecureRequests: []
+      workerSrc: ["'self'", "blob:", "'unsafe-inline'"],
+      manifestSrc: ["'self'"]
     }
   },
   crossOriginEmbedderPolicy: { policy: "credentialless" },
@@ -70,8 +79,7 @@ app.use((req, res, next) => {
     'usb=(), ' +
     'magnetometer=(), ' +
     'accelerometer=(), ' +
-    'gyroscope=(), ' +
-    'notifications=(self)'
+    'gyroscope=()'
   );
 
   if (NODE_ENV === 'production') {
@@ -80,18 +88,6 @@ app.use((req, res, next) => {
 
   next();
 });
-
-// Replace these with your VAPID keys
-const vapidKeys = {
-  publicKey: process.env.VAPID_PUBLIC_KEY || 'BDvq04Lz9f3hxRmwHc7WP2jNE_r9qbE3_UVbXYdyZKJPC6jVSY9ZnWDsY7Y07Yf2hYbBxNmOHhxvPnB4YBw0Qr8',
-  privateKey: process.env.VAPID_PRIVATE_KEY || ''
-};
-
-webpush.setVapidDetails(
-  'mailto:admin@barzo.app',
-  vapidKeys.publicKey,
-  vapidKeys.privateKey
-);
 
 // Middleware
 app.use(express.json());
@@ -107,31 +103,51 @@ app.use((err, req, res, next) => {
   });
 });
 
-// API Routes
-app.get('/api/vapidPublicKey', (req, res) => {
-  res.json({ publicKey: vapidKeys.publicKey });
+// API Routes - proxy to worker
+app.get('/api/vapidPublicKey', async (req, res, next) => {
+  try {
+    console.log('Fetching VAPID key from worker:', `${WORKER_URL}/api/vapidPublicKey`);
+    const response = await fetch(`${WORKER_URL}/api/vapidPublicKey`, {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to get VAPID key');
+    }
+    const result = await response.json();
+    console.log('VAPID key response:', result);
+    res.json(result);
+  } catch (error) {
+    console.error('VAPID key error:', error);
+    next(error);
+  }
 });
 
-app.post('/api/subscribe', async (req, res) => {
+app.post('/api/subscribe', async (req, res, next) => {
   try {
-    const subscription = req.body;
-    if (!subscription || !subscription.endpoint) {
-      return res.status(400).json({ error: 'Invalid subscription data' });
-    }
     const response = await fetch(`${WORKER_URL}/api/subscribe`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription)
+      headers: { 
+        'Content-Type': 'application/json',
+        // Forward auth header if present
+        ...(req.headers.authorization && { 
+          'Authorization': req.headers.authorization 
+        })
+      },
+      body: JSON.stringify(req.body)
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
-    res.status(201).json({ message: 'Subscription added successfully' });
+    res.status(201).json(result);
   } catch (error) {
     next(error);
   }
 });
 
-app.post('/api/notify', async (req, res) => {
+app.post('/api/notify', async (req, res, next) => {
   try {
     const response = await fetch(`${WORKER_URL}/api/notify`, {
       method: 'POST',
@@ -172,8 +188,6 @@ if (NODE_ENV === 'development') {
         });
       });
     }
-    
-    console.log(`\nPublic VAPID key: ${vapidKeys.publicKey}`);
   });
 }
 

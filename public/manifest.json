@@ -2,7 +2,7 @@
   "name": "Barzo",
   "short_name": "Barzo",
   "description": "Be Social. Be Barzo. Get Free Drinks.",
-  "start_url": "/?mode=pwa",
+  "start_url": "/pwa.html?pwa=true",
   "display": "standalone",
   "background_color": "#f9fafb",
   "theme_color": "#ef4444",
