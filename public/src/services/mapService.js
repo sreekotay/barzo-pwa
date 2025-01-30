@@ -142,9 +142,17 @@ class MapService {
             color: '#FF0000'
         });
 
-        // Subscribe to user location updates
+        // Subscribe to user location changes to handle initial location
         this._locationUnsubscribe = this._locationService.onUserLocationChange((location) => {
-            this._updateUserMarker(location);
+            // Only fly to location if:
+            // 1. We started with default location (no cached location)
+            // 2. We're not in manual map mode
+            if (!cachedLocation && !this._isManualMap && location) {
+                this._map.flyTo({
+                    center: [location.lng, location.lat],
+                    zoom: this._initialZoom
+                });
+            }
         });
 
         // Subscribe to map location updates for marker
