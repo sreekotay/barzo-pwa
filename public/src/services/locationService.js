@@ -1,12 +1,3 @@
-/** @enum {string} */
-export const UserLocationStatus = {
-    UNKNOWN: 'unknown',
-    REQUESTED: 'requested',
-    GRANTED: 'granted',
-    DENIED: 'denied',
-    TIMED_OUT: 'timed out'
-};
-
 /**
  * LocationService
  * 
@@ -24,6 +15,7 @@ export const UserLocationStatus = {
  * - Debug mode for testing
  * - Distance-based update filtering (10m threshold)
  * - User location status tracking (unknown, requested, granted, denied, timed out)
+ * - Permission handling and status tracking
  * 
  * Usage:
  * ```js
@@ -54,20 +46,49 @@ export const UserLocationStatus = {
  *     console.log('User moved to:', location);
  * });
  * 
- * or 
- * 
- *  * const unsubscribe = locationService.onMapLocationChange(location => {
- *     console.log('MAp moved to:', location);
+ * // Listen for map location changes
+ * const unsubscribeMap = locationService.onMapLocationChange(location => {
+ *     console.log('Map moved to:', location);
  * });
+ * 
+ * // Debug mode
+ * locationService.setIsDebugLocation(true);
+ * locationService.setDebugUserLocation({ lat: 51.5074, lng: -0.1278 });
+ * 
+ * // Manual map control
+ * locationService.setMapLocation({ lat: 51.5074, lng: -0.1278 }); // manually set map location
+ * locationService.resetMapLocation(); // reset to user location
  * 
  * // Stop tracking
  * locationService.stopWatching();
  * unsubscribe();
+ * unsubscribeMap();
  * ```
  * 
- * setMapLocation(location) - manually set map location - no more auto updates to map location
- * resetMapLocation() - automatically reset to user location
+ * State Management:
+ * - All location and debug settings are persisted in localStorage
+ * - Cached location includes timestamp for freshness checking
+ * - Permission and location status are tracked separately
+ * - Map location can be controlled manually or follow user location
  * 
+ * Error Handling:
+ * - Permission denied falls back to cached location if available
+ * - Timeout errors are handled gracefully
+ * - Debug mode allows testing without real GPS
+ */
+
+/** @enum {string} */
+export const UserLocationStatus = {
+    UNKNOWN: 'unknown',
+    REQUESTED: 'requested',
+    GRANTED: 'granted',
+    DENIED: 'denied',
+    TIMED_OUT: 'timed out'
+};
+
+const STORAGE_KEY = 'locationService';
+
+/**
  * @typedef {Object} LatLng
  * @property {number} lat - Latitude
  * @property {number} lng - Longitude
@@ -75,33 +96,49 @@ export const UserLocationStatus = {
 
 class LocationService {
     constructor() {
-        const userLocationCached = localStorage.getItem('userLocationCached');
-        const userLocationCachedTS = localStorage.getItem('userLocationCachedTS');
+        // Load all persisted data
+        const stored = localStorage.getItem(STORAGE_KEY);
+        const data = stored ? JSON.parse(stored) : {};
 
         /** @type {LatLng} */
         this._userLocation = null;
         /** @type {LatLng} */
-        this._userLocationCached = userLocationCached ? JSON.parse(userLocationCached) : null;
+        this._userLocationCached = data.userLocationCached || null;
         /** @type {number|null} */
-        this._userLocationCachedTS = userLocationCachedTS ? parseInt(userLocationCachedTS) : null;
+        this._userLocationCachedTS = data.userLocationCachedTS || null;
         /** @type {LatLng} */
-        this._debugUserLocation = null;
+        this._debugUserLocation = data.debugUserLocation || null;
         /** @type {LatLng} */
         this._mapLocation = null;
         /** @type {boolean} */
         this._isManualMap = false;
         /** @type {boolean} */
-        this._isDebugLocation = false;
+        this._isDebugLocation = data.isDebugLocation || false;
         /** @type {number|null} */
         this._watchId = null;
+        /** @type {'granted'|'denied'|'prompt'|null} */
+        this._permissionStatus = null;
+        /** @type {UserLocationStatus} */
+        this._userLocationStatus = UserLocationStatus.UNKNOWN;
 
         /** @type {Array<{callback: Function, debounceMs: number, timeoutId: number|null}>} */
         this._mapLocationCallbacks = [];
         /** @type {Array<{callback: Function, debounceMs: number, timeoutId: number|null}>} */
         this._userLocationCallbacks = [];
+    }
 
-        /** @type {UserLocationStatus} */
-        this._userLocationStatus = UserLocationStatus.UNKNOWN;
+    /**
+     * Persist current state to localStorage
+     * @private
+     */
+    _persistState() {
+        const data = {
+            userLocationCached: this._userLocationCached,
+            userLocationCachedTS: this._userLocationCachedTS,
+            debugUserLocation: this._debugUserLocation,
+            isDebugLocation: this._isDebugLocation
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }
 
     // User Location
@@ -129,11 +166,12 @@ class LocationService {
             throw new Error('Invalid location format. Expected {lat: number, lng: number}');
         }
         this._debugUserLocation = location;
+        this._persistState();
     }
 
     // Map Location - return the user location, unless we are in manual mode or we don't have a user location
     getMapLocation() {
-        return (_isManualMap ? null : this.getUserLocationCached()) || this._mapLocation;
+        return (this._isManualMap ? null : this.getUserLocationCached()) || this._mapLocation;
     }
 
     /**
@@ -184,12 +222,12 @@ class LocationService {
         });
     }
 
-    resetMapLocation(value) {
+    resetMapLocation() {
         this._isManualMap = false;
-        this._mapLocation = getMapLocation() 
+        this._mapLocation = this.getMapLocation();
     }
 
-    // Is Debug Location
+    // Debug mode
     getIsDebugLocation() {
         return this._isDebugLocation;
     }
@@ -199,6 +237,7 @@ class LocationService {
             throw new Error('isDebugLocation must be a boolean');
         }
         this._isDebugLocation = value;
+        this._persistState();
     }
 
     /**
@@ -277,8 +316,7 @@ class LocationService {
             // Cache the location with timestamp
             this._userLocationCached = location;
             this._userLocationCachedTS = Date.now();
-            localStorage.setItem('userLocationCached', JSON.stringify(location));
-            localStorage.setItem('userLocationCachedTS', this._userLocationCachedTS.toString());
+            this._persistState();
 
             // Clear any existing watch
             if (this._watchId !== null) {
@@ -298,8 +336,7 @@ class LocationService {
                         this._userLocation = newLocation;
                         this._userLocationCached = newLocation;
                         this._userLocationCachedTS = Date.now();
-                        localStorage.setItem('userLocationCached', JSON.stringify(newLocation));
-                        localStorage.setItem('userLocationCachedTS', this._userLocationCachedTS.toString());
+                        this._persistState();
                         
                         // Trigger callbacks with the new location
                         this._triggerUserLocationCallbacks(newLocation);
@@ -379,14 +416,60 @@ class LocationService {
         }
     }
 
-    /**
-     * Get the current user location status
-     * @returns {UserLocationStatus}
-     */
+    // Status methods
     getUserLocationStatus() {
         return this._userLocationStatus;
     }
+
+    getPermissionStatus() {
+        return this._permissionStatus;
+    }
+
+    // Permission and geolocation methods
+    async requestPermission() {
+        try {
+            if (navigator.permissions && navigator.permissions.query) {
+                const result = await navigator.permissions.query({ name: 'geolocation' });
+                
+                if (result.state === 'prompt') {
+                    return new Promise((resolve) => {
+                        navigator.geolocation.getCurrentPosition(
+                            () => {
+                                this._permissionStatus = 'granted';
+                                resolve('granted');
+                            },
+                            (error) => {
+                                this._permissionStatus = error.code === 1 ? 'denied' : 'prompt';
+                                resolve(this._permissionStatus);
+                            },
+                            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                        );
+                    });
+                }
+                
+                this._permissionStatus = result.state;
+                return result.state;
+            }
+            
+            return new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    () => {
+                        this._permissionStatus = 'granted';
+                        resolve('granted');
+                    },
+                    (error) => {
+                        this._permissionStatus = error.code === 1 ? 'denied' : 'prompt';
+                        resolve(this._permissionStatus);
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            });
+        } catch (error) {
+            console.error('Error requesting permission:', error);
+            this._permissionStatus = 'denied';
+            return 'denied';
+        }
+    }
 }
 
-// Export as singleton
 export default new LocationService(); 
