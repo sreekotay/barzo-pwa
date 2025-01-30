@@ -201,13 +201,8 @@ app.post('/api/notify', async (req, res, next) => {
 });
 
 // Serve index.html for all other routes
-app.get('*', (req, res) => {
-  const filePath = path.join(__dirname, 'public', req.path || '');
-  if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
-  } else {
+app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  }
 });
 
 // Export the Express API for Vercel

@@ -4,10 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Barzo</title>
-    <meta name="theme-color" content="#ef4444">
+    <meta name="theme-color" content="#f51324">
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" type="image/png" href="/icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        red: {
+                            500: '#f51324',
+                            600: '#d81020', // slightly darker for hover states
+                        }
+                    }
+                }
+            }
+        }
+    </script>
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4">
     <div class="max-w-md w-full space-y-8 text-center">
@@ -17,8 +31,8 @@
         </div>
 
         <!-- Title -->
-        <h1 class="text-3xl font-bold text-gray-900">Welcome to Barzo.
-            <span style="font-size: 16px">Someone sent you a free drink!</span></h1>
+        <h1 class="text-3xl font-bold text-gray-900">Welcome to Barzo.<br>
+            <span style="font-size: 16px">Be social. Drink Free.</span></h1>
 
         <!-- Initial Explanation -->
         <div id="permission-explanation" class="bg-white rounded-lg shadow p-6 text-left space-y-4">
@@ -33,7 +47,7 @@
                 <li class="flex items-start">
                     <span class="inline-block w-2 h-2 bg-red-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
                     <span>
-                        <strong>Notifications</strong> - to keep you updated about messages and events
+                        <strong>Notifications</strong><br>We keep you updated about messages and events
                     </span>
                 </li>
             </ul>

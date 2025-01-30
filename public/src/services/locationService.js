@@ -1,0 +1,392 @@
+/** @enum {string} */
+export const UserLocationStatus = {
+    UNKNOWN: 'unknown',
+    REQUESTED: 'requested',
+    GRANTED: 'granted',
+    DENIED: 'denied',
+    TIMED_OUT: 'timed out'
+};
+
+/**
+ * LocationService
+ * 
+ * A singleton service that manages location-related functionality including:
+ * - User's current location tracking
+ * - Location caching
+ * - Debug location overrides
+ * - Map location management
+ * - Location change notifications
+ * 
+ * Key Features:
+ * - Automatic location tracking with GPS
+ * - Location caching in localStorage
+ * - Debounced location change callbacks
+ * - Debug mode for testing
+ * - Distance-based update filtering (10m threshold)
+ * - User location status tracking (unknown, requested, granted, denied, timed out)
+ * 
+ * Usage:
+ * ```js
+ * import locationService, { UserLocationStatus } from '../services/locationService';
+ * 
+ * // Explicitly request permission first
+ * const permissionStatus = await locationService.requestPermission();
+ * if (permissionStatus === 'granted') {
+ *     // Start tracking location
+ *     await locationService.requestGeoLocation();
+ * } else {
+ *     console.log('Please enable location permissions');
+ * }
+ * 
+ * // Get current location
+ * const location = locationService.getUserLocation();
+ * const location = locationService.getUserLocationCached(); // last known location
+ * const location = locationService.getMapLocation(); // map center
+ * 
+ * // Check user location status
+ * const status = locationService.getUserLocationStatus();
+ * if (status === UserLocationStatus.DENIED) {
+ *     console.log('Please enable location permissions');
+ * }
+ * 
+ * // Listen for location changes
+ * const unsubscribe = locationService.onUserLocationChange(location => {
+ *     console.log('User moved to:', location);
+ * });
+ * 
+ * or 
+ * 
+ *  * const unsubscribe = locationService.onMapLocationChange(location => {
+ *     console.log('MAp moved to:', location);
+ * });
+ * 
+ * // Stop tracking
+ * locationService.stopWatching();
+ * unsubscribe();
+ * ```
+ * 
+ * setMapLocation(location) - manually set map location - no more auto updates to map location
+ * resetMapLocation() - automatically reset to user location
+ * 
+ * @typedef {Object} LatLng
+ * @property {number} lat - Latitude
+ * @property {number} lng - Longitude
+ */
+
+class LocationService {
+    constructor() {
+        const userLocationCached = localStorage.getItem('userLocationCached');
+        const userLocationCachedTS = localStorage.getItem('userLocationCachedTS');
+
+        /** @type {LatLng} */
+        this._userLocation = null;
+        /** @type {LatLng} */
+        this._userLocationCached = userLocationCached ? JSON.parse(userLocationCached) : null;
+        /** @type {number|null} */
+        this._userLocationCachedTS = userLocationCachedTS ? parseInt(userLocationCachedTS) : null;
+        /** @type {LatLng} */
+        this._debugUserLocation = null;
+        /** @type {LatLng} */
+        this._mapLocation = null;
+        /** @type {boolean} */
+        this._isManualMap = false;
+        /** @type {boolean} */
+        this._isDebugLocation = false;
+        /** @type {number|null} */
+        this._watchId = null;
+
+        /** @type {Array<{callback: Function, debounceMs: number, timeoutId: number|null}>} */
+        this._mapLocationCallbacks = [];
+        /** @type {Array<{callback: Function, debounceMs: number, timeoutId: number|null}>} */
+        this._userLocationCallbacks = [];
+
+        /** @type {UserLocationStatus} */
+        this._userLocationStatus = UserLocationStatus.UNKNOWN;
+    }
+
+    // User Location
+    getUserLocation() {
+        return this._isDebugLocation ? this._debugUserLocation : this._userLocation;
+    }
+
+    // User Location Cached
+    getUserLocationCached() {
+        return this._isDebugLocation ? this._debugUserLocation : this._userLocationCached;
+    }
+
+    // User Location Cached Timestamp
+    getUserLocationCachedTS() {
+        return this._userLocationCachedTS;
+    }
+
+    // Debug User Location
+    getDebugUserLocation() {
+        return this._debugUserLocation;
+    }
+
+    setDebugUserLocation(location) {
+        if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+            throw new Error('Invalid location format. Expected {lat: number, lng: number}');
+        }
+        this._debugUserLocation = location;
+    }
+
+    // Map Location - return the user location, unless we are in manual mode or we don't have a user location
+    getMapLocation() {
+        return (_isManualMap ? null : this.getUserLocationCached()) || this._mapLocation;
+    }
+
+    /**
+     * Registers a callback that will be called when map location changes
+     * @param {Function} callback Function to call with new location
+     * @param {number} debounceMs Debounce time in milliseconds
+     * @returns {Function} Function to unregister the callback
+     */
+    onMapLocationChange(callback, debounceMs = 1000) {
+        const callbackObj = {
+            callback,
+            debounceMs,
+            timeoutId: null
+        };
+        
+        this._mapLocationCallbacks.push(callbackObj);
+        
+        // Return unsubscribe function
+        return () => {
+            const index = this._mapLocationCallbacks.findIndex(cb => cb === callbackObj);
+            if (index !== -1) {
+                if (callbackObj.timeoutId) {
+                    clearTimeout(callbackObj.timeoutId);
+                }
+                this._mapLocationCallbacks.splice(index, 1);
+            }
+        };
+    }
+
+    setMapLocation(location) {
+        if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+            throw new Error('Invalid location format. Expected {lat: number, lng: number}');
+        }
+
+        this._isManualMap = true;
+        this._mapLocation = location;
+
+        // Trigger debounced callbacks
+        this._mapLocationCallbacks.forEach(callbackObj => {
+            if (callbackObj.timeoutId) {
+                clearTimeout(callbackObj.timeoutId);
+            }
+
+            callbackObj.timeoutId = setTimeout(() => {
+                callbackObj.callback(location);
+                callbackObj.timeoutId = null;
+            }, callbackObj.debounceMs);
+        });
+    }
+
+    resetMapLocation(value) {
+        this._isManualMap = false;
+        this._mapLocation = getMapLocation() 
+    }
+
+    // Is Debug Location
+    getIsDebugLocation() {
+        return this._isDebugLocation;
+    }
+
+    setIsDebugLocation(value) {
+        if (typeof value !== 'boolean') {
+            throw new Error('isDebugLocation must be a boolean');
+        }
+        this._isDebugLocation = value;
+    }
+
+    /**
+     * Registers a callback that will be called when user location changes
+     * @param {Function} callback Function to call with new location
+     * @param {number} debounceMs Debounce time in milliseconds
+     * @returns {Function} Function to unregister the callback
+     */
+    onUserLocationChange(callback, debounceMs = 1000) {
+        const callbackObj = {
+            callback,
+            debounceMs,
+            timeoutId: null
+        };
+        
+        this._userLocationCallbacks.push(callbackObj);
+        
+        // Return unsubscribe function
+        return () => {
+            const index = this._userLocationCallbacks.findIndex(cb => cb === callbackObj);
+            if (index !== -1) {
+                if (callbackObj.timeoutId) {
+                    clearTimeout(callbackObj.timeoutId);
+                }
+                this._userLocationCallbacks.splice(index, 1);
+            }
+        };
+    }
+
+    /**
+     * Triggers callbacks for user location changes
+     * @private
+     * @param {LatLng} location 
+     */
+    _triggerUserLocationCallbacks(location) {
+        this._userLocationCallbacks.forEach(callbackObj => {
+            if (callbackObj.timeoutId) {
+                clearTimeout(callbackObj.timeoutId);
+            }
+
+            callbackObj.timeoutId = setTimeout(() => {
+                callbackObj.callback(location);
+                callbackObj.timeoutId = null;
+            }, callbackObj.debounceMs);
+        });
+    }
+
+    /**
+     * Requests the user's current location using the browser's Geolocation API
+     * and sets up continuous location watching if available
+     * @returns {Promise<LatLng>} A promise that resolves with the user's location
+     */
+    async requestGeoLocation() {
+        if (!navigator.geolocation) {
+            throw new Error('Geolocation is not supported by your browser');
+        }
+
+        try {
+            // First get the initial position
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
+                });
+            });
+
+            const location = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+
+            // Update userLocation
+            this._userLocation = location;
+            
+            // Cache the location with timestamp
+            this._userLocationCached = location;
+            this._userLocationCachedTS = Date.now();
+            localStorage.setItem('userLocationCached', JSON.stringify(location));
+            localStorage.setItem('userLocationCachedTS', this._userLocationCachedTS.toString());
+
+            // Clear any existing watch
+            if (this._watchId !== null) {
+                navigator.geolocation.clearWatch(this._watchId);
+            }
+
+            // Set up the location watcher
+            this._watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    const newLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+                    
+                    // Only update if location has changed significantly (more than 10 meters)
+                    if (this._hasLocationChangedSignificantly(newLocation, this._userLocation)) {
+                        this._userLocation = newLocation;
+                        this._userLocationCached = newLocation;
+                        this._userLocationCachedTS = Date.now();
+                        localStorage.setItem('userLocationCached', JSON.stringify(newLocation));
+                        localStorage.setItem('userLocationCachedTS', this._userLocationCachedTS.toString());
+                        
+                        // Trigger callbacks with the new location
+                        this._triggerUserLocationCallbacks(newLocation);
+                    }
+                },
+                (error) => {
+                    console.warn('Watch position error:', error.message);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+
+            return location;
+        } catch (error) {
+            // If we have a cached location and the error is timeout or permission denied,
+            // return the cached location
+            if (this.userLocationCached && 
+                (error.code === error.TIMEOUT || 
+                 error.code === error.PERMISSION_DENIED)) {
+                return this.userLocationCached;
+            }
+            
+            // Otherwise, throw the error with a more user-friendly message
+            const errorMessage = {
+                [GeolocationPositionError.PERMISSION_DENIED]: 'Location permission denied',
+                [GeolocationPositionError.POSITION_UNAVAILABLE]: 'Location information unavailable',
+                [GeolocationPositionError.TIMEOUT]: 'Location request timed out'
+            }[error.code] || 'Failed to get location';
+
+            throw new Error(errorMessage);
+        }
+    }
+
+    /**
+     * Calculates if the location has changed significantly (more than 10 meters)
+     * @private
+     * @param {LatLng} location1 
+     * @param {LatLng} location2 
+     * @returns {boolean}
+     */
+    _hasLocationChangedSignificantly(location1, location2) {
+        if (!location1 || !location2) return true;
+
+        // Approximate distance calculation using the Haversine formula
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = location1.lat * Math.PI/180;
+        const φ2 = location2.lat * Math.PI/180;
+        const Δφ = (location2.lat - location1.lat) * Math.PI/180;
+        const Δλ = (location2.lng - location1.lng) * Math.PI/180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        const distance = R * c;
+        return distance > 10; // Return true if distance is more than 10 meters
+    }
+
+    /**
+     * Stops watching the user's location
+     */
+    stopWatching() {
+        if (this._watchId !== null) {
+            navigator.geolocation.clearWatch(this._watchId);
+            this._watchId = null;
+
+            // Clear any pending callbacks
+            this._userLocationCallbacks.forEach(callbackObj => {
+                if (callbackObj.timeoutId) {
+                    clearTimeout(callbackObj.timeoutId);
+                }
+            });
+        }
+    }
+
+    /**
+     * Get the current user location status
+     * @returns {UserLocationStatus}
+     */
+    getUserLocationStatus() {
+        return this._userLocationStatus;
+    }
+}
+
+// Export as singleton
+export default new LocationService(); 

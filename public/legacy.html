@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auth Handler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 md:p-8">
+    <div class="w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto space-y-8">
+        <div id="loading" class="text-center p-4">
+            <p class="text-gray-600 text-lg">Loading...</p>
+        </div>
+        
+        <div id="auth-info" class="hidden bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8 space-y-6">
+            <h2 class="text-2xl font-bold text-gray-900 text-center sm:text-left">Authentication Info</h2>
+            <pre id="auth-data" class="bg-gray-100 p-4 rounded-lg overflow-x-auto text-sm min-w-full font-mono"></pre>
+            <button 
+                onclick="signOut()"
+                class="w-full py-3 px-4 bg-red-500 text-white rounded-lg font-medium shadow-lg hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                Sign Out
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let globalAuthToken = null;
+        let globalBarzoUrl = 'https://api.public.barzo.com';
+
+        async function apiCall(method, path, params = {}) {
+            if (!globalAuthToken?.token?.accessToken) {
+                throw new Error('No access token available');
+            }
+
+            const url = new URL(path, globalBarzoUrl);
+            const body = method === 'POST' ? JSON.stringify(params) : null;
+
+            // Add query parameters if any
+            if (!body) {
+                Object.entries(params).forEach(([key, value]) => {
+                    url.searchParams.append(key, value);
+                });
+            }
+
+            try {
+                const response = await fetch(url.toString(), {
+                    method,
+                    headers: {
+                        'Authorization': `Bearer ${globalAuthToken.token.accessToken}`,
+                        'Accept': 'application/json'
+                    },
+                    body
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('Request failed:', error);
+                throw error;
+            }
+        }
+
+        function getQueryParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+
+        function signOut() {
+            localStorage.removeItem('authToken');
+            // Remove authToken from URL and redirect
+            const url = new URL(window.location.href);
+            url.searchParams.delete('authToken');
+            window.location.href = url.toString();
+        }
+
+        async function getUserInfo() {
+            //const userInfo = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}`);
+            const userInfo = await apiCall('POST', `/v1/users/all`, {page:1, limit:300});
+            //const userInfo = await apiCall('POST', `/v1/venues/all`, {page:1, limit:300});
+            console.log(JSON.stringify(userInfo, null, 2));
+            return userInfo;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const authToken = getQueryParam('authToken') || localStorage.getItem('authToken');
+            const loadingEl = document.getElementById('loading');
+            const authInfoEl = document.getElementById('auth-info');
+            const authDataEl = document.getElementById('auth-data');
+
+            if (!authToken) {
+                loadingEl.innerHTML = '<p class="text-gray-600">Redirecting to authentication...</p>';
+                const currentUrl = encodeURIComponent(window.location.href) + '?authToken=${authToken}';
+                window.location.href = `https://chat.barzo.work/otp.html?redirect=${currentUrl}`;
+                return;
+            }
+
+            try {
+                globalAuthToken = JSON.parse(decodeURIComponent(authToken));
+                localStorage.setItem('authToken', authToken);
+                
+                // If we have an authToken in URL, remove it and redirect
+                if (getQueryParam('authToken')) {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('authToken');
+                    window.location.href = url.toString();
+                    return;
+                }
+                
+                loadingEl.classList.add('hidden');
+                authInfoEl.classList.remove('hidden');
+                authDataEl.textContent = JSON.stringify(globalAuthToken, null, 2);
+
+                getUserInfo();
+            } catch (error) {
+                loadingEl.innerHTML = `<p class="text-red-500">Error parsing auth token: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
+
