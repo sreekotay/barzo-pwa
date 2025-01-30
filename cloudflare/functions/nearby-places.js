@@ -14,7 +14,7 @@ export default {
     }
 
     try {
-      const { latitude, longitude, radius, types } = await request.json();
+      const { latitude, longitude, radius, types, maxResults = 20 } = await request.json();
 
       // Ensure radius is within Google Places API limits (0-50000 meters)
       const validRadius = Math.min(Math.max(radius, 1), 50000);
@@ -24,27 +24,35 @@ export default {
       url.searchParams.append('radius', validRadius.toString());
       url.searchParams.append('type', types.join('|'));
       url.searchParams.append('key', env.GOOGLE_MAPS_API_KEY);
+      
+      // Add pagetoken handling for more results
+      let allResults = [];
+      let nextPageToken;
+      
+      do {
+        if (nextPageToken) {
+          url.searchParams.set('pagetoken', nextPageToken);
+          // Google requires a short delay between page token requests
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
 
-      const response = await fetch(url.toString());
-      const data = await response.json();
+        const response = await fetch(url.toString());
+        const data = await response.json();
 
-      if (data.status !== 'OK') {
-        console.warn('Google Places API returned non-OK status:', data.status);
-        return new Response(
-          JSON.stringify({ 
-            results: [], 
-            status: data.status, 
-            error_message: data.error_message 
-          }),
-          { 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200 
-          }
-        );
-      }
+        if (data.status === 'OK') {
+          allResults = allResults.concat(data.results);
+          nextPageToken = data.next_page_token;
+        } else {
+          console.warn('Google Places API returned non-OK status:', data.status);
+          break;
+        }
+      } while (nextPageToken && allResults.length < maxResults);
+
+      // Trim results to maxResults
+      allResults = allResults.slice(0, maxResults);
 
       return new Response(
-        JSON.stringify(data),
+        JSON.stringify({ results: allResults, status: 'OK' }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           status: 200 

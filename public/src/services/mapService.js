@@ -31,7 +31,7 @@ class MapService {
      * @param {string} [options.searchInput] - ID of search input element (optional)
      * @param {string} [options.searchInputLevel] - Level for search input (e.g. 'neighborhood', 'postcode', 'place')
      * @param {number} [options.initialZoom=13] - Initial map zoom level
-     * @param {boolean} [options.nearbyPlaces=false] - Whether to search for nearby places
+     * @param {number|boolean} [options.nearbyPlaces=false] - Number of nearby places to fetch, or false to disable
      */
     constructor(locationService, { mapContainer, accessToken, googleApiKey, searchInput, searchInputLevel, initialZoom = 13, nearbyPlaces = false }) {
         this._locationService = locationService;
@@ -628,7 +628,8 @@ class MapService {
                     latitude: location.lat,
                     longitude: location.lng,
                     radius: radius,
-                    types: ['restaurant', 'cafe', 'bar'] // Default place types
+                    types: ['restaurant', 'cafe', 'bar'],
+                    maxResults: typeof this._nearbyPlaces === 'number' ? this._nearbyPlaces : 20 // Default to 20 if true
                 })
             });
 

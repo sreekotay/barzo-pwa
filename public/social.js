@@ -10,7 +10,7 @@ const mapService = new MapService(locationService, {
     searchInput: 'search-container',
     searchInputLevel: 'neighborhood',
     initialZoom: 13,
-    nearbyPlaces: 10000
+    nearbyPlaces: 30
 });
 
 mapService.initialize();
