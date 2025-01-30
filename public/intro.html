@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Awesome Capacitor App</title>
+    <meta
+      name="viewport"
+      content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- Add Capacitor core script -->
+    <script src="capacitor.js"></script>
+
+    <style>
+      .frame {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+      #backup-frame {
+        z-index: 1;
+      }
+      #load-frame {
+        z-index: 2;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe 
+      id="load-frame" 
+      class="frame"
+      _src="https://fluid.barzo.work/index.html?bgColor=200%2C0%2C0&color=255%2C255%2C255&centerSlider=true&left_text=Staying+in&right_text=Going+out&content=%2523%2523top%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2523fs%253D24%252Cfw%253D400%252Cc%253Drgba%28255%252C255%252C255%252C0.8%29%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520Let%27s%2520fucking%2520Barzooooooo....%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2523%2523mid%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2523fs%253D36%252Cfw%253D700%252Cc%253Dwhite%252Cpt%253D20%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520Welcome%2520to%2520Barzo.%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2523fs%253D18%252Cfw%253D400%252Cc%253Drgba%28255%252C255%252C255%252C0.8%29%252Cpb%253D16%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520Slide%2520the%2520thumb%2520below.%253Cbr%253E%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520Tell%2520us%2520what%2520you%27re%2520doing%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2523%2523end%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2523img%252Ch%253D100%252Cpt%253D32%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520https%253A%252F%252Fimages.squarespace-cdn.com%252Fcontent%252Fv1%252F6765aef091d13b205284550c%252Fe8bb2a46-44fc-472e-b324-73117739e6fa%252FDrink_Logo.png%253Fformat%253D1500w%250A%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520%2520&redirect_url=https%253A%252F%252Fchat.barzo.work&exit_animation=zoom&bgMedia=https%3A%2F%2Fcommondatastorage.googleapis.com%2Fgtv-videos-bucket%2Fsample%2FElephantsDream.mp4&bgMediaType=video"
+      src="https://pwa.barzo.work/redirect.html"
+      allow="geolocation; camera; microphone; autoplay; notifications"
+      allowfullscreen
+    ></iframe>
+    <iframe 
+      id="backup-frame"
+      class="frame"
+      src="https://chat.barzo.work"
+      allow="geolocation; camera; microphone; autoplay; notifications"
+      allowfullscreen
+    ></iframe>
+    <script>
+      // Wait for Capacitor to be ready
+      window.addEventListener('DOMContentLoaded', async () => {
+        let hasNavigated = 0;
+        const loadFrame = document.getElementById('load-frame');
+        const backupFrame = document.getElementById('backup-frame');
+
+        loadFrame.addEventListener('load', () => {
+          if (hasNavigated>1) loadFrame.remove();
+          else hasNavigated++;
+        });
+
+        // Request permissions
+        try {
+          // Check and request notifications permission
+          const notificationPermission = await Notification.requestPermission();
+          console.log('Notification permission:', notificationPermission);
+
+          // Check and request location permission
+          if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              position => {
+                console.log('Location permission granted');
+              },
+              error => {
+                console.log('Location permission denied:', error);
+              },
+              {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
+              }
+            );
+          }
+        } catch (error) {
+          console.error('Error requesting permissions:', error);
+        }
+      });
+    </script>
+  </body>
+</html>
