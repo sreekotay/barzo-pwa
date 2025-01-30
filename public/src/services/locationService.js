@@ -350,11 +350,11 @@ class LocationService {
 
         this._userLocationStatus = UserLocationStatus.REQUESTED;
         try {
-            // First get the initial position
+            // First get the initial position with increased timeout
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, {
                     enableHighAccuracy: true,
-                    timeout: 5000,
+                    timeout: 15000,  // Increased from 5000 to 20000 ms (20 seconds)
                     maximumAge: 0
                 });
             });
@@ -410,31 +410,33 @@ class LocationService {
                 },
                 {
                     enableHighAccuracy: true,
-                    timeout: 10000,
+                    timeout: 20000,  // Increased from 10000 to 20000 ms
                     maximumAge: 0
                 }
             );
 
             return location;
         } catch (error) {
-            if (error.code === error.PERMISSION_DENIED) {
+            console.warn('Geolocation error:', error.message);
+            
+            // Set appropriate status
+            if (error.code === 1) { // PERMISSION_DENIED
                 this._userLocationStatus = UserLocationStatus.DENIED;
-            } else if (error.code === error.TIMEOUT) {
+            } else if (error.code === 3) { // TIMEOUT
                 this._userLocationStatus = UserLocationStatus.TIMED_OUT;
             }
-            // If we have a cached location and the error is timeout or permission denied,
-            // return the cached location
-            if (this._userLocationCached &&
-                (error.code === error.TIMEOUT || 
-                 error.code === error.PERMISSION_DENIED)) {
+
+            // Try to use cached location if available
+            if (this._userLocationCached && !this.isLocationStale()) {
+                console.log('Using cached location due to geolocation error');
                 return this._userLocationCached;
             }
-            
-            // Otherwise, throw the error with a more user-friendly message
+
+            // If no cached location or it's stale, throw a more user-friendly error
             const errorMessage = {
-                [GeolocationPositionError.PERMISSION_DENIED]: 'Location permission denied',
-                [GeolocationPositionError.POSITION_UNAVAILABLE]: 'Location information unavailable',
-                [GeolocationPositionError.TIMEOUT]: 'Location request timed out'
+                1: 'Location permission denied. Please enable location services.',
+                2: 'Location information unavailable. Please try again.',
+                3: 'Location request timed out. Please check your connection and try again.'
             }[error.code] || 'Failed to get location';
 
             throw new Error(errorMessage);
