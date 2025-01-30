@@ -13,6 +13,7 @@
  *     mapContainer: 'map',
  *     accessToken: 'your-mapbox-token',
  *     searchInput: 'search-input', // optional
+ *     searchInputLevel: 'neighborhood',  // e.g. 'neighborhood', 'postcode', 'place'
  *     initialZoom: 13
  * });
  * 
@@ -27,13 +28,15 @@ class MapService {
      * @param {string} options.mapContainer - ID of the map container element
      * @param {string} options.accessToken - Mapbox access token
      * @param {string} [options.searchInput] - ID of search input element (optional)
+     * @param {string} [options.searchInputLevel] - Level for search input (e.g. 'neighborhood', 'postcode', 'place')
      * @param {number} [options.initialZoom=13] - Initial map zoom level
      */
-    constructor(locationService, { mapContainer, accessToken, searchInput, initialZoom = 13 }) {
+    constructor(locationService, { mapContainer, accessToken, searchInput, searchInputLevel, initialZoom = 13 }) {
         this._locationService = locationService;
         this._mapContainer = mapContainer;
         this._accessToken = accessToken;
         this._searchInput = searchInput;
+        this._searchInputLevel = searchInputLevel;
         this._initialZoom = initialZoom;
 
         /** @type {mapboxgl.Map} */
@@ -46,6 +49,9 @@ class MapService {
         this._locationUnsubscribe = null;
         /** @type {Function|null} */
         this._mapLocationUnsubscribe = null;
+
+        /** @type {Object|null} */
+        this._currentPlace = null;  // Store the full place data
 
         // Default center (Times Square, NYC)
         this._defaultCenter = {
@@ -132,14 +138,32 @@ class MapService {
             this._updateUserMarker(location);
         });
 
-        // Subscribe to map location updates
+        // Subscribe to map location updates for marker
         this._mapLocationUnsubscribe = this._locationService.onMapLocationChange(
             (location) => {
                 this._updateMapMarker(location);
             },
             { 
-                realtime: true,    // Use realtime updates
-                debounceMs: 0      // No debouncing
+                realtime: true,    // Use realtime updates for marker
+                debounceMs: 0      // No debouncing for marker
+            }
+        );
+
+        // Subscribe to map location updates for reverse geocoding
+        this._locationService.onMapLocationChange(
+            async (location) => {
+                await this._reverseGeocode(location);
+                // Update search input if it exists
+                if (this._searchInput && this._currentPlace) {
+                    const searchInput = document.querySelector('.mapboxgl-ctrl-geocoder input');
+                    if (searchInput) {
+                        searchInput.value = this._getSearchDisplayText(this._currentPlace);
+                    }
+                }
+            },
+            {
+                realtime: false,    // Don't need realtime for geocoding
+                debounceMs: 1000    // Debounce to avoid too many API calls
             }
         );
 
@@ -152,17 +176,8 @@ class MapService {
             this._locationService.setMapLocation(cachedLocation);
         }
 
-        // Listen for map movement events
+        // Remove the moveend listener since we're using callbacks
         this._map.on('move', () => {
-            const center = this._map.getCenter();
-            const location = {
-                lng: center.lng,
-                lat: center.lat
-            };
-            this._locationService.setMapLocation(location);
-        });
-
-        this._map.on('moveend', () => {
             const center = this._map.getCenter();
             const location = {
                 lng: center.lng,
@@ -224,15 +239,37 @@ class MapService {
             accessToken: this._accessToken,
             mapboxgl: mapboxgl,
             marker: false,
-            types: 'poi,address,place',  // Include POIs and places
-            countries: 'us',  // Limit to US for better relevance
-            proximity: this._defaultCenter, // Bias results towards NYC
-            bbox: [-74.0479, 40.6829, -73.9067, 40.8820], // NYC bounding box for better local results
-            minLength: 3, // Start searching after 3 characters
-            limit: 10, // Show more results
+            types: 'poi,place,address',  // Prioritize POIs and places over addresses
+            countries: 'us',  // Keep US restriction
+            proximity: this._locationService.getMapLocation() || this._defaultCenter,
+            bbox: null,  // Remove NYC bounding box
+            minLength: 1,  // Start searching after just 1 character
+            limit: 15,  // Show more results
             fuzzyMatch: true,
-            language: 'en'
+            language: 'en',
+            localGeocoder: (query) => {
+                // If we have a current place, add it as a suggestion
+                if (this._currentPlace) {
+                    return [{
+                        place_name: this._getSearchDisplayText(this._currentPlace),
+                        center: [this._currentPlace.center[0], this._currentPlace.center[1]],
+                        place_type: ['current'],
+                        text: 'Current Location'
+                    }];
+                }
+                return [];
+            }
         });
+
+        // Update proximity when map location changes
+        this._locationService.onMapLocationChange(
+            (location) => {
+                if (location) {
+                    geocoder.setProximity({ longitude: location.lng, latitude: location.lat });
+                }
+            },
+            { realtime: false, debounceMs: 1000 }
+        );
 
         // Add geocoder to the search input
         const searchElement = document.getElementById(this._searchInput);
@@ -248,20 +285,20 @@ class MapService {
             const [lng, lat] = event.result.center;
             const location = { lng, lat };
             
-            // Update marker and map
-            this._searchMarker.setLngLat([lng, lat]).addTo(this._map);
+            // Update map marker and view
+            this._mapMarker.setLngLat([lng, lat]).addTo(this._map);
             this._map.flyTo({
                 center: [lng, lat],
                 zoom: this._initialZoom
             });
 
-            // Update LocationService
+            // Update only map location in LocationService
             this._locationService.setMapLocation(location);
         });
 
-        // Clear marker and reset map location when search is cleared
+        // Clear marker when search is cleared
         geocoder.on('clear', () => {
-            this._searchMarker.remove();
+            this._mapMarker.remove();
             this._locationService.resetMapLocation();
         });
     }
@@ -328,6 +365,68 @@ class MapService {
      */
     getMap() {
         return this._map;
+    }
+
+    /**
+     * Get the raw place data from the last reverse geocode
+     * @returns {Object|null} The full place data from Mapbox
+     */
+    getRawPlace() {
+        return this._currentPlace;
+    }
+
+    /**
+     * Reverse geocode a location to an address
+     * @private
+     */
+    async _reverseGeocode(location) {
+        try {
+            const response = await fetch(
+                `https://api.mapbox.com/geocoding/v5/mapbox.places/${location.lng},${location.lat}.json?` + 
+                new URLSearchParams({
+                    access_token: this._accessToken,
+                    types: 'address,poi,place',
+                    limit: 1
+                })
+            );
+            
+            const data = await response.json();
+            if (data.features && data.features.length > 0) {
+                this._currentPlace = data.features[0];  // Store the full place data
+            } else {
+                this._currentPlace = null;
+            }
+        } catch (error) {
+            console.warn('Reverse geocoding failed:', error);
+            this._currentPlace = null;
+        }
+    }
+
+    /**
+     * Get display text for search input based on configured level
+     * @private
+     */
+    _getSearchDisplayText(feature) {
+        if (!this._searchInputLevel) {
+            return feature.place_name;  // Default to full place name
+        }
+
+        // If level matches the feature's own type, use its text
+        if (feature.id?.startsWith(this._searchInputLevel)) {
+            return feature.text;
+        }
+
+        // Look for matching level in context
+        const contextMatch = feature.context?.find(
+            item => item.id?.startsWith(this._searchInputLevel)
+        );
+        
+        if (contextMatch) {
+            return contextMatch.text;
+        }
+
+        // Fallback to place_name if no match found
+        return feature.place_name;
     }
 }
 
