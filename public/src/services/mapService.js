@@ -32,8 +32,18 @@ class MapService {
      * @param {string} [options.searchInputLevel] - Level for search input (e.g. 'neighborhood', 'postcode', 'place')
      * @param {number} [options.initialZoom=13] - Initial map zoom level
      * @param {number|boolean} [options.nearbyPlaces=false] - Number of nearby places to fetch, or false to disable
+     * @param {string} [options.placesEndpoint='supabase'] - Which endpoint to use for places API ('supabase' or 'cloudflare')
      */
-    constructor(locationService, { mapContainer, accessToken, googleApiKey, searchInput, searchInputLevel, initialZoom = 13, nearbyPlaces = false }) {
+    constructor(locationService, { 
+        mapContainer, 
+        accessToken, 
+        googleApiKey, 
+        searchInput, 
+        searchInputLevel, 
+        initialZoom = 13, 
+        nearbyPlaces = false,
+        placesEndpoint = 'supabase'
+    }) {
         this._locationService = locationService;
         this._mapContainer = mapContainer;
         this._accessToken = accessToken;
@@ -42,6 +52,7 @@ class MapService {
         this._searchInputLevel = searchInputLevel;
         this._initialZoom = initialZoom;
         this._nearbyPlaces = nearbyPlaces;
+        this._placesEndpoint = placesEndpoint;
 
         /** @type {mapboxgl.Map} */
         this._map = null;
@@ -655,30 +666,59 @@ class MapService {
         try {
             const radius = this._calculateRadius();
             
-            const response = await fetch('https://nearby-places-worker.sree-35c.workers.dev', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
+            let endpoint, requestBody;
+            
+            if (this._placesEndpoint === 'cloudflare') {
+                endpoint = 'https://nearby-places-worker.sree-35c.workers.dev';
+                requestBody = {
                     latitude: location.lat,
                     longitude: location.lng,
                     radius: radius,
                     types: ['restaurant', 'cafe', 'bar'],
-                    maxResults: typeof this._nearbyPlaces === 'number' ? this._nearbyPlaces : 20 // Default to 20 if true
-                })
+                    maxResults: typeof this._nearbyPlaces === 'number' ? this._nearbyPlaces : 20
+                };
+            } else {
+                // Default to Supabase
+                endpoint = 'https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search';
+                requestBody = {
+                    latitude: location.lat,
+                    longitude: location.lng,
+                    radius: radius,
+                    types: ['bar']
+                };
+            }
+            
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
             });
 
-            const places = await response.json();
-            console.log('nearbyPlaces', places);
-
-            if (places.results) {
-                this._addPlaceMarkers(places.results);
+            const data = await response.json();
+            
+            if (data.results) {
+                // Convert the places data to match the format expected by _addPlaceMarkers
+                const places = data.results.map(place => ({
+                    place_id: place.place_id,
+                    name: place.name,
+                    vicinity: place.vicinity,
+                    rating: place.rating,
+                    geometry: {
+                        location: {
+                            lng: place.geometry.location.lng,
+                            lat: place.geometry.location.lat
+                        }
+                    }
+                }));
+                
+                this._addPlaceMarkers(places);
             }
 
             // Emit an event with the places data
             const event = new CustomEvent('nearbyPlacesUpdated', { 
-                detail: places 
+                detail: data 
             });
             this._map.getContainer().dispatchEvent(event);
         } catch (error) {
