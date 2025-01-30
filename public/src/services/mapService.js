@@ -437,6 +437,14 @@ class MapService {
                 this._mapMarker
                     .setLngLat([location.lng, location.lat])
                     .addTo(this._map);
+                
+                const el = this._mapMarker.getElement();
+                el.classList.add('marker-drop');
+                
+                // Remove animation class after it completes
+                el.addEventListener('animationend', () => {
+                    el.classList.remove('marker-drop');
+                }, { once: true });
             } else {
                 this._mapMarker.setLngLat([location.lng, location.lat]);
             }
@@ -574,37 +582,65 @@ class MapService {
      * @param {Array} places - Array of place results from Google Places API
      */
     _addPlaceMarkers(places) {
-        this._clearPlaceMarkers();
+        // Create a map of existing markers by place ID
+        const existingMarkers = new Map(
+            this._placeMarkers.map(marker => [marker.placeId, marker])
+        );
 
+        // Create a set of new place IDs
+        const newPlaceIds = new Set(places.map(place => place.place_id));
+
+        // Remove markers that are no longer in the results
+        this._placeMarkers = this._placeMarkers.filter(marker => {
+            if (!newPlaceIds.has(marker.placeId)) {
+                marker.remove();
+                return false;
+            }
+            return true;
+        });
+
+        // Add or update markers
         places.forEach(place => {
             if (place.geometry && place.geometry.location) {
-                // Create marker element
-                const el = document.createElement('div');
-                el.className = 'place-marker';
-                el.style.width = '25px';
-                el.style.height = '25px';
-                el.style.backgroundImage = 'url(https://maps.google.com/mapfiles/ms/icons/red-dot.png)';
-                el.style.backgroundSize = 'contain';
-                el.style.cursor = 'pointer';
-
-                // Create popup
-                const popup = new mapboxgl.Popup({ offset: 25 })
-                    .setHTML(`
-                        <h3>${place.name}</h3>
-                        <p>${place.vicinity || ''}</p>
-                        ${place.rating ? `<p>Rating: ${place.rating} ⭐️</p>` : ''}
-                    `);
-
-                // Create and add marker
-                const marker = new mapboxgl.Marker(el)
-                    .setLngLat([
+                const existingMarker = existingMarkers.get(place.place_id);
+                
+                if (existingMarker) {
+                    // Update existing marker position if needed
+                    existingMarker.setLngLat([
                         place.geometry.location.lng,
                         place.geometry.location.lat
-                    ])
-                    .setPopup(popup)
-                    .addTo(this._map);
+                    ]);
+                } else {
+                    // Create new marker
+                    const el = document.createElement('div');
+                    el.className = 'place-marker';
+                    el.style.width = '25px';
+                    el.style.height = '25px';
+                    el.style.backgroundImage = 'url(https://maps.google.com/mapfiles/ms/icons/red-dot.png)';
+                    el.style.backgroundSize = 'contain';
+                    el.style.cursor = 'pointer';
 
-                this._placeMarkers.push(marker);
+                    // Create popup
+                    const popup = new mapboxgl.Popup({ offset: 25 })
+                        .setHTML(`
+                            <h3>${place.name}</h3>
+                            <p>${place.vicinity || ''}</p>
+                            ${place.rating ? `<p>Rating: ${place.rating} ⭐️</p>` : ''}
+                        `);
+
+                    // Create and add marker
+                    const marker = new mapboxgl.Marker(el)
+                        .setLngLat([
+                            place.geometry.location.lng,
+                            place.geometry.location.lat
+                        ])
+                        .setPopup(popup)
+                        .addTo(this._map);
+
+                    // Store the place ID with the marker
+                    marker.placeId = place.place_id;
+                    this._placeMarkers.push(marker);
+                }
             }
         });
     }
