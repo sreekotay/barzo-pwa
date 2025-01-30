@@ -1,0 +1,27 @@
+.marker-drop {
+    animation: markerDrop 0.6s cubic-bezier(0.33, 1, 0.68, 1);
+    position: relative;  /* Needed for top to work */
+}
+
+@keyframes markerDrop {
+    0% {
+        opacity: 0;
+        top: -200px;
+    }
+    50% {
+        opacity: 1;
+        top: 0;
+    }
+    75% {
+        top: -20px;
+    }
+    90% {
+        top: 0;
+    }
+    95% {
+        top: -5px;
+    }
+    100% {
+        top: 0;
+    }
+} 

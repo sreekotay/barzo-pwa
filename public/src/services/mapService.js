@@ -61,12 +61,12 @@ class MapService {
         // Load Mapbox GL JS
         await this._loadMapboxGL();
         
-        // Initialize map with cached location or default center
+        // Get cached location
         const cachedLocation = this._locationService.getUserLocationCached();
         const initialCenter = cachedLocation || this._defaultCenter;
         
+        // Initialize map
         mapboxgl.accessToken = this._accessToken;
-        
         this._map = new mapboxgl.Map({
             container: this._mapContainer,
             style: 'mapbox://styles/mapbox/streets-v12',
@@ -144,15 +144,12 @@ class MapService {
         );
 
         // Set initial locations
-        const initialUserLocation = this._locationService.getUserLocation();
-        const initialMapLocation = this._locationService.getMapLocation();
-
-        if (initialUserLocation) {
-            this._updateUserMarker(initialUserLocation);
-        }
-        if (initialMapLocation) {
-            this._updateMapMarker(initialMapLocation);
-            this._map.setCenter([initialMapLocation.lng, initialMapLocation.lat]);
+        if (cachedLocation) {
+            // Update both user and map markers with cached location
+            this._updateUserMarker(cachedLocation);
+            this._updateMapMarker(cachedLocation);
+            // Set initial map location in service
+            this._locationService.setMapLocation(cachedLocation);
         }
 
         // Listen for map movement events
@@ -270,7 +267,7 @@ class MapService {
     }
 
     /**
-     * Update the user location marker position
+     * Update the user location marker position with animation
      * @private
      */
     _updateUserMarker(location) {
@@ -284,14 +281,27 @@ class MapService {
     }
 
     /**
-     * Update the map location marker position
+     * Update the map location marker position with animation
      * @private
      */
     _updateMapMarker(location) {
         if (location) {
-            this._mapMarker
-                .setLngLat([location.lng, location.lat])
-                .addTo(this._map);
+            const startingPoint = this._mapMarker.getLngLat();
+            if (!startingPoint) {
+                this._mapMarker
+                    .setLngLat([location.lng, location.lat])
+                    .addTo(this._map);
+                
+                const el = this._mapMarker.getElement();
+                el.classList.add('marker-drop');
+                
+                // Remove animation class after it completes
+                el.addEventListener('animationend', () => {
+                    el.classList.remove('marker-drop');
+                }, { once: true });
+            } else {
+                this._mapMarker.setLngLat([location.lng, location.lat]);
+            }
         } else {
             this._mapMarker.remove();
         }
