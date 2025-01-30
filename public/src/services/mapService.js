@@ -31,8 +31,9 @@ class MapService {
      * @param {string} [options.searchInput] - ID of search input element (optional)
      * @param {string} [options.searchInputLevel] - Level for search input (e.g. 'neighborhood', 'postcode', 'place')
      * @param {number} [options.initialZoom=13] - Initial map zoom level
+     * @param {boolean} [options.nearbyPlaces=false] - Whether to search for nearby places
      */
-    constructor(locationService, { mapContainer, accessToken, googleApiKey, searchInput, searchInputLevel, initialZoom = 13 }) {
+    constructor(locationService, { mapContainer, accessToken, googleApiKey, searchInput, searchInputLevel, initialZoom = 13, nearbyPlaces = false }) {
         this._locationService = locationService;
         this._mapContainer = mapContainer;
         this._accessToken = accessToken;
@@ -40,6 +41,7 @@ class MapService {
         this._searchInput = searchInput;
         this._searchInputLevel = searchInputLevel;
         this._initialZoom = initialZoom;
+        this._nearbyPlaces = nearbyPlaces;
 
         /** @type {mapboxgl.Map} */
         this._map = null;
@@ -60,6 +62,12 @@ class MapService {
             lng: -73.9855,
             lat: 40.7580
         };
+
+        /** @type {Promise|null} */
+        this._googlePlacesLoading = null;  // Track loading state of Google Places API
+
+        /** @type {mapboxgl.Marker[]} */
+        this._placeMarkers = [];  // Array to store place markers
     }
 
     /**
@@ -183,6 +191,19 @@ class MapService {
                 debounceMs: 1000    // Debounce to avoid too many API calls
             }
         );
+
+        // Subscribe to map location updates for nearby places
+        if (this._nearbyPlaces) {
+            this._locationService.onMapLocationChange(
+                async (location) => {
+                    await this._handleNearbyPlaces(location);
+                },
+                {
+                    realtime: false,
+                    debounceMs: 1000 // Debounce to avoid too many API calls
+                }
+            );
+        }
 
         // Set initial locations
         if (cachedLocation) {
@@ -345,13 +366,35 @@ class MapService {
     }
 
     /**
-     * Load Google Places API
+     * Load Google Places API if not already loaded
      * @private
      */
     async _loadGooglePlaces() {
-        if (window.google?.places) return;
-        
-        return new Promise((resolve, reject) => {
+        // Return existing promise if already loading
+        if (this._googlePlacesLoading) {
+            return this._googlePlacesLoading;
+        }
+
+        // Return immediately if already loaded
+        if (window.google?.maps?.places) {
+            return Promise.resolve();
+        }
+
+        // Create new loading promise
+        this._googlePlacesLoading = new Promise((resolve, reject) => {
+            // Check if script is already in the process of loading
+            const existingScript = document.querySelector(
+                `script[src^="https://maps.googleapis.com/maps/api/js?key=${this._googleApiKey}"]`
+            );
+
+            if (existingScript) {
+                // If script exists but not loaded, wait for it
+                existingScript.addEventListener('load', resolve);
+                existingScript.addEventListener('error', reject);
+                return;
+            }
+
+            // Create and load new script
             const script = document.createElement('script');
             script.src = `https://maps.googleapis.com/maps/api/js?key=${this._googleApiKey}&libraries=places`;
             script.async = true;
@@ -359,6 +402,14 @@ class MapService {
             script.onerror = reject;
             document.head.appendChild(script);
         });
+
+        try {
+            await this._googlePlacesLoading;
+            return Promise.resolve();
+        } catch (error) {
+            this._googlePlacesLoading = null; // Reset loading state on error
+            throw error;
+        }
     }
 
     /**
@@ -386,14 +437,6 @@ class MapService {
                 this._mapMarker
                     .setLngLat([location.lng, location.lat])
                     .addTo(this._map);
-                
-                const el = this._mapMarker.getElement();
-                el.classList.add('marker-drop');
-                
-                // Remove animation class after it completes
-                el.addEventListener('animationend', () => {
-                    el.classList.remove('marker-drop');
-                }, { once: true });
             } else {
                 this._mapMarker.setLngLat([location.lng, location.lat]);
             }
@@ -495,6 +538,115 @@ class MapService {
 
         // Fallback to place_name if no match found
         return feature.place_name;
+    }
+
+    /**
+     * Calculate radius based on map bounds
+     * @private
+     * @returns {number} radius in meters
+     */
+    _calculateRadius() {
+        const bounds = this._map.getBounds();
+        const center = this._map.getCenter();
+        
+        // Get the northeast corner
+        const ne = bounds.getNorthEast();
+        
+        // Calculate the distance from center to corner (roughly half the viewport)
+        const radiusInMeters = center.distanceTo(ne);
+        
+        // Ensure radius is within Google Places API limits (0-50000 meters)
+        return Math.min(Math.max(radiusInMeters, 1), 50000);
+    }
+
+    /**
+     * Clear existing place markers from the map
+     * @private
+     */
+    _clearPlaceMarkers() {
+        this._placeMarkers.forEach(marker => marker.remove());
+        this._placeMarkers = [];
+    }
+
+    /**
+     * Add markers for places on the map
+     * @private
+     * @param {Array} places - Array of place results from Google Places API
+     */
+    _addPlaceMarkers(places) {
+        this._clearPlaceMarkers();
+
+        places.forEach(place => {
+            if (place.geometry && place.geometry.location) {
+                // Create marker element
+                const el = document.createElement('div');
+                el.className = 'place-marker';
+                el.style.width = '25px';
+                el.style.height = '25px';
+                el.style.backgroundImage = 'url(https://maps.google.com/mapfiles/ms/icons/red-dot.png)';
+                el.style.backgroundSize = 'contain';
+                el.style.cursor = 'pointer';
+
+                // Create popup
+                const popup = new mapboxgl.Popup({ offset: 25 })
+                    .setHTML(`
+                        <h3>${place.name}</h3>
+                        <p>${place.vicinity || ''}</p>
+                        ${place.rating ? `<p>Rating: ${place.rating} ⭐️</p>` : ''}
+                    `);
+
+                // Create and add marker
+                const marker = new mapboxgl.Marker(el)
+                    .setLngLat([
+                        place.geometry.location.lng,
+                        place.geometry.location.lat
+                    ])
+                    .setPopup(popup)
+                    .addTo(this._map);
+
+                this._placeMarkers.push(marker);
+            }
+        });
+    }
+
+    /**
+     * Search for nearby places when map location changes
+     * @private
+     */
+    async _handleNearbyPlaces(location) {
+        if (!this._nearbyPlaces) return;
+        
+        try {
+            const radius = this._calculateRadius();
+            
+            const response = await fetch('https://nearby-places-worker.sree-35c.workers.dev', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    latitude: location.lat,
+                    longitude: location.lng,
+                    radius: radius,
+                    types: ['restaurant', 'cafe', 'bar'] // Default place types
+                })
+            });
+
+            const places = await response.json();
+            console.log('nearbyPlaces', places);
+
+            if (places.results) {
+                this._addPlaceMarkers(places.results);
+            }
+
+            // Emit an event with the places data
+            const event = new CustomEvent('nearbyPlacesUpdated', { 
+                detail: places 
+            });
+            this._map.getContainer().dispatchEvent(event);
+        } catch (error) {
+            console.error('Error fetching nearby places:', error);
+        }
     }
 }
 

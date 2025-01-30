@@ -88,4 +88,28 @@
 .pac-item {
     padding: 6px 10px !important;
     cursor: pointer !important;
+}
+
+.place-marker {
+    background-size: contain;
+    background-repeat: no-repeat;
+    cursor: pointer;
+}
+
+.mapboxgl-popup {
+    max-width: 200px;
+}
+
+.mapboxgl-popup-content {
+    padding: 15px;
+}
+
+.mapboxgl-popup-content h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+}
+
+.mapboxgl-popup-content p {
+    margin: 5px 0;
+    font-size: 14px;
 } 
