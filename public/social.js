@@ -1,6 +1,16 @@
 import locationService from '/src/services/locationService.js';
 locationService.requestGeoLocation();
 
+import MapService from '/src/services/mapService.js';
+
+const mapService = new MapService(locationService, {
+    mapContainer: 'map',
+    accessToken: 'pk.eyJ1Ijoic3JlZWJhcnpvIiwiYSI6ImNtNXdwOHl1aDAwaGgyam9vbHdjYnIyazQifQ.StZ77F8-5g43kq29k2OLaw',
+    searchInput: 'search-container',
+    initialZoom: 13
+});
+
+mapService.initialize();
 // Private functions
 function initializeMobileMenu() {
     const hamburger = document.getElementById('hamburger-menu');

@@ -181,25 +181,28 @@ class LocationService {
     /**
      * Registers a callback that will be called when map location changes
      * @param {Function} callback Function to call with new location
-     * @param {number} debounceMs Debounce time in milliseconds
+     * @param {Object} options Callback options
+     * @param {boolean} [options.realtime=false] Whether to call in realtime or debounced
+     * @param {number} [options.debounceMs=1000] Debounce time in milliseconds
      * @returns {Function} Function to unregister the callback
      */
-    onMapLocationChange(callback, debounceMs = 1000) {
+    onMapLocationChange(callback, { realtime = false, debounceMs = 1000 } = {}) {
         if (typeof callback !== 'function') {
             throw new Error('Callback must be a function');
         }
         if (typeof debounceMs !== 'number' || debounceMs < 0) {
             throw new Error('debounceMs must be a positive number');
         }
+
         const callbackObj = {
             callback,
             debounceMs,
-            timeoutId: null
+            timeoutId: null,
+            realtime
         };
         
         this._mapLocationCallbacks.push(callbackObj);
         
-        // Return unsubscribe function
         return () => {
             const index = this._mapLocationCallbacks.findIndex(cb => cb === callbackObj);
             if (index !== -1) {
@@ -229,6 +232,29 @@ class LocationService {
                 callbackObj.callback(location);
                 callbackObj.timeoutId = null;
             }, callbackObj.debounceMs);
+        });
+    }
+
+    /**
+     * Triggers callbacks for map location changes
+     * @private
+     * @param {LatLng} location 
+     */
+    _triggerMapLocationCallbacks(location) {
+        this._mapLocationCallbacks.forEach(callbackObj => {
+            if (callbackObj.realtime) {
+                // Call immediately for realtime callbacks
+                callbackObj.callback(location);
+            } else {
+                // Debounce for non-realtime callbacks
+                if (callbackObj.timeoutId) {
+                    clearTimeout(callbackObj.timeoutId);
+                }
+                callbackObj.timeoutId = setTimeout(() => {
+                    callbackObj.callback(location);
+                    callbackObj.timeoutId = null;
+                }, callbackObj.debounceMs);
+            }
         });
     }
 
@@ -288,11 +314,12 @@ class LocationService {
     }
 
     /**
-     * Triggers callbacks for user location changes
+     * Triggers callbacks for user location changes and optionally map location callbacks
      * @private
      * @param {LatLng} location 
      */
     _triggerUserLocationCallbacks(location) {
+        // Trigger user location callbacks
         this._userLocationCallbacks.forEach(callbackObj => {
             if (callbackObj.timeoutId) {
                 clearTimeout(callbackObj.timeoutId);
@@ -303,6 +330,11 @@ class LocationService {
                 callbackObj.timeoutId = null;
             }, callbackObj.debounceMs);
         });
+
+        // If not in manual mode, trigger map location callbacks too
+        if (!this._isManualMap) {
+            this._triggerMapLocationCallbacks(location);
+        }
     }
 
     /**
@@ -341,6 +373,9 @@ class LocationService {
             this._userLocationCachedTS = Date.now();
             this._persistState();
 
+            // Trigger user location callbacks
+            this._triggerUserLocationCallbacks(location);
+            
             // Clear any existing watch
             if (this._watchId !== null) {
                 navigator.geolocation.clearWatch(this._watchId);
@@ -361,8 +396,8 @@ class LocationService {
                         this._userLocationCachedTS = Date.now();
                         this._persistState();
                         
-                        // Trigger callbacks with the new location
-                        this._triggerUserLocationCallbacks(newLocation);
+                        // Trigger user location callbacks
+                        this._triggerUserLocationCallbacks(newLocation);                        
                     }
                 },
                 (error) => {
