@@ -132,13 +132,17 @@ class LocationService {
      * @private
      */
     _persistState() {
-        const data = {
-            userLocationCached: this._userLocationCached,
-            userLocationCachedTS: this._userLocationCachedTS,
-            debugUserLocation: this._debugUserLocation,
-            isDebugLocation: this._isDebugLocation
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        try {
+            const data = {
+                userLocationCached: this._userLocationCached,
+                userLocationCachedTS: this._userLocationCachedTS,
+                debugUserLocation: this._debugUserLocation,
+                isDebugLocation: this._isDebugLocation
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (error) {
+            console.warn('Failed to persist location state:', error);
+        }
     }
 
     // User Location
@@ -181,6 +185,12 @@ class LocationService {
      * @returns {Function} Function to unregister the callback
      */
     onMapLocationChange(callback, debounceMs = 1000) {
+        if (typeof callback !== 'function') {
+            throw new Error('Callback must be a function');
+        }
+        if (typeof debounceMs !== 'number' || debounceMs < 0) {
+            throw new Error('debounceMs must be a positive number');
+        }
         const callbackObj = {
             callback,
             debounceMs,
@@ -224,7 +234,11 @@ class LocationService {
 
     resetMapLocation() {
         this._isManualMap = false;
-        this._mapLocation = this.getMapLocation();
+        const location = this.getMapLocation();
+        if (location) {
+            this._mapLocation = location;
+            this._triggerMapLocationCallbacks(location);
+        }
     }
 
     // Debug mode
@@ -247,6 +261,12 @@ class LocationService {
      * @returns {Function} Function to unregister the callback
      */
     onUserLocationChange(callback, debounceMs = 1000) {
+        if (typeof callback !== 'function') {
+            throw new Error('Callback must be a function');
+        }
+        if (typeof debounceMs !== 'number' || debounceMs < 0) {
+            throw new Error('debounceMs must be a positive number');
+        }
         const callbackObj = {
             callback,
             debounceMs,
@@ -292,9 +312,11 @@ class LocationService {
      */
     async requestGeoLocation() {
         if (!navigator.geolocation) {
+            this._userLocationStatus = UserLocationStatus.DENIED;
             throw new Error('Geolocation is not supported by your browser');
         }
 
+        this._userLocationStatus = UserLocationStatus.REQUESTED;
         try {
             // First get the initial position
             const position = await new Promise((resolve, reject) => {
@@ -312,6 +334,7 @@ class LocationService {
 
             // Update userLocation
             this._userLocation = location;
+            this._userLocationStatus = UserLocationStatus.GRANTED;
             
             // Cache the location with timestamp
             this._userLocationCached = location;
@@ -344,6 +367,11 @@ class LocationService {
                 },
                 (error) => {
                     console.warn('Watch position error:', error.message);
+                    if (error.code === error.PERMISSION_DENIED) {
+                        this._userLocationStatus = UserLocationStatus.DENIED;
+                    } else if (error.code === error.TIMEOUT) {
+                        this._userLocationStatus = UserLocationStatus.TIMED_OUT;
+                    }
                 },
                 {
                     enableHighAccuracy: true,
@@ -354,12 +382,17 @@ class LocationService {
 
             return location;
         } catch (error) {
+            if (error.code === error.PERMISSION_DENIED) {
+                this._userLocationStatus = UserLocationStatus.DENIED;
+            } else if (error.code === error.TIMEOUT) {
+                this._userLocationStatus = UserLocationStatus.TIMED_OUT;
+            }
             // If we have a cached location and the error is timeout or permission denied,
             // return the cached location
-            if (this.userLocationCached && 
+            if (this._userLocationCached &&
                 (error.code === error.TIMEOUT || 
                  error.code === error.PERMISSION_DENIED)) {
-                return this.userLocationCached;
+                return this._userLocationCached;
             }
             
             // Otherwise, throw the error with a more user-friendly message
@@ -406,19 +439,32 @@ class LocationService {
         if (this._watchId !== null) {
             navigator.geolocation.clearWatch(this._watchId);
             this._watchId = null;
+            this._userLocationStatus = UserLocationStatus.UNKNOWN; // Reset status
 
-            // Clear any pending callbacks
+            // Clear all pending callbacks
             this._userLocationCallbacks.forEach(callbackObj => {
                 if (callbackObj.timeoutId) {
                     clearTimeout(callbackObj.timeoutId);
                 }
             });
+            this._userLocationCallbacks = []; // Clear all callbacks
+
+            // Clear map callbacks too
+            this._mapLocationCallbacks.forEach(callbackObj => {
+                if (callbackObj.timeoutId) {
+                    clearTimeout(callbackObj.timeoutId);
+                }
+            });
+            this._mapLocationCallbacks = [];
         }
     }
 
-    // Status methods
+    /**
+     * Get the current user location status
+     * @returns {UserLocationStatus}
+     */
     getUserLocationStatus() {
-        return this._userLocationStatus;
+        return this._isDebugLocation ? UserLocationStatus.GRANTED : this._userLocationStatus;
     }
 
     getPermissionStatus() {
@@ -469,6 +515,57 @@ class LocationService {
             this._permissionStatus = 'denied';
             return 'denied';
         }
+    }
+
+    /**
+     * Check if the cached location is older than the given time
+     * @param {number} maxAgeMs Maximum age in milliseconds
+     * @returns {boolean}
+     */
+    isLocationStale(maxAgeMs = 15 * 60 * 1000) { // default 15 minutes
+        if (!this._userLocationCachedTS) return true;
+        return Date.now() - this._userLocationCachedTS > maxAgeMs;
+    }
+
+    /**
+     * Clear all cached location data
+     */
+    clearCache() {
+        this._userLocationCached = null;
+        this._userLocationCachedTS = null;
+        this._persistState();
+    }
+
+    /**
+     * Calculate distance between two locations in meters
+     * @param {LatLng} location1 
+     * @param {LatLng} location2 
+     * @returns {number} Distance in meters
+     */
+    getDistanceBetween(location1, location2) {
+        if (!location1 || !location2) return Infinity;
+
+        const R = 6371e3;
+        const φ1 = location1.lat * Math.PI/180;
+        const φ2 = location2.lat * Math.PI/180;
+        const Δφ = (location2.lat - location1.lat) * Math.PI/180;
+        const Δλ = (location2.lng - location1.lng) * Math.PI/180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c;
+    }
+
+    /**
+     * Get age of cached location in milliseconds
+     * @returns {number|null}
+     */
+    getLocationAge() {
+        if (!this._userLocationCachedTS) return null;
+        return Date.now() - this._userLocationCachedTS;
     }
 }
 
