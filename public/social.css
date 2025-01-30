@@ -3,6 +3,17 @@
     position: relative;  /* Needed for top to work */
 }
 
+#map {
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.5s ease-in; /* Duration and easing of your choice */
+  }
+  
+#map.map-loaded {
+    opacity: 1; /* final state */
+}
+
 @keyframes markerDrop {
     0% {
         opacity: 0;
@@ -24,4 +35,57 @@
     100% {
         top: 0;
     }
+}
+
+/* Mapbox Geocoder Customization */
+.mapboxgl-ctrl-geocoder input[type='text'] {
+    font-size: 14px !important;   /* Ensure input text is also smaller */
+    height: 36px !important;      /* Slightly reduce height to match font */
+}
+
+.mapboxgl-ctrl-geocoder .suggestions {
+    font-size: 13px !important;   /* Smaller suggestion text */
+}
+
+.mapboxgl-ctrl-geocoder .suggestion-item {
+    padding: 6px 10px !important; /* Tighter suggestion padding */
+}
+
+/* Hide Mapbox branding */
+.mapboxgl-ctrl-bottom-right {
+    display: none !important;
+}
+
+.mapboxgl-ctrl-logo {
+    display: none !important;
+}
+
+.mapboxgl-ctrl-attrib {
+    display: none !important;
+}
+
+.mapboxgl-ctrl-geocoder,
+.google-places-input {
+    min-width: calc(75vw) !important;  /* Make the input wider */
+    max-width: 400px !important;  /* Make the input wider */
+}
+
+/* Google Places Input Styling */
+.google-places-input {
+    font-size: 14px !important;
+    height: 36px !important;
+    padding: 6px 12px !important;
+    border: 1px solid #ccc !important;
+    border-radius: 4px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+}
+
+.pac-container {
+    font-size: 13px !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
+}
+
+.pac-item {
+    padding: 6px 10px !important;
+    cursor: pointer !important;
 } 

@@ -27,14 +27,16 @@ class MapService {
      * @param {Object} options
      * @param {string} options.mapContainer - ID of the map container element
      * @param {string} options.accessToken - Mapbox access token
+     * @param {string} [options.googleApiKey] - Google Places API key
      * @param {string} [options.searchInput] - ID of search input element (optional)
      * @param {string} [options.searchInputLevel] - Level for search input (e.g. 'neighborhood', 'postcode', 'place')
      * @param {number} [options.initialZoom=13] - Initial map zoom level
      */
-    constructor(locationService, { mapContainer, accessToken, searchInput, searchInputLevel, initialZoom = 13 }) {
+    constructor(locationService, { mapContainer, accessToken, googleApiKey, searchInput, searchInputLevel, initialZoom = 13 }) {
         this._locationService = locationService;
         this._mapContainer = mapContainer;
         this._accessToken = accessToken;
+        this._googleApiKey = googleApiKey;
         this._searchInput = searchInput;
         this._searchInputLevel = searchInputLevel;
         this._initialZoom = initialZoom;
@@ -77,8 +79,15 @@ class MapService {
             container: this._mapContainer,
             style: 'mapbox://styles/mapbox/streets-v12',
             zoom: this._initialZoom,
-            center: [initialCenter.lng, initialCenter.lat]
+            center: [initialCenter.lng, initialCenter.lat],
+            attributionControl: false,  // Remove attribution
+            logoPosition: 'bottom-right',  // Position logo (will hide with CSS)
+            scrollZoom: {
+                around: 'center'
+              }
         });
+        document.getElementById(this._mapContainer).classList.add('map-loaded');
+
 
         // Add controls
         this._map.addControl(new mapboxgl.NavigationControl());
@@ -235,71 +244,112 @@ class MapService {
      * @private
      */
     async _initializeSearch() {
-        const geocoder = new MapboxGeocoder({
-            accessToken: this._accessToken,
-            mapboxgl: mapboxgl,
-            marker: false,
-            types: 'poi,place,address',  // Prioritize POIs and places over addresses
-            countries: 'us',  // Keep US restriction
-            proximity: this._locationService.getMapLocation() || this._defaultCenter,
-            bbox: null,  // Remove NYC bounding box
-            minLength: 1,  // Start searching after just 1 character
-            limit: 15,  // Show more results
-            fuzzyMatch: true,
-            language: 'en',
-            localGeocoder: (query) => {
-                // If we have a current place, add it as a suggestion
-                if (this._currentPlace) {
-                    return [{
-                        place_name: this._getSearchDisplayText(this._currentPlace),
-                        center: [this._currentPlace.center[0], this._currentPlace.center[1]],
-                        place_type: ['current'],
-                        text: 'Current Location'
-                    }];
-                }
-                return [];
-            }
+        if (this._googleApiKey) {
+            await this._initializeGoogleSearch();
+        } else {
+            await this._initializeMapboxSearch();
+        }
+    }
+
+    /**
+     * Initialize Google Places search
+     * @private
+     */
+    async _initializeGoogleSearch() {
+        await this._loadGooglePlaces();
+        
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search places...';
+        searchInput.className = 'google-places-input';
+        
+        const searchContainer = document.getElementById(this._searchInput);
+        searchContainer.appendChild(searchInput);
+
+        const autocomplete = new google.maps.places.Autocomplete(searchInput, {
+            types: ['establishment', 'geocode'],
+            componentRestrictions: { country: 'us' },
+            fields: ['geometry', 'name', 'formatted_address', 'address_components']
         });
 
-        // Update proximity when map location changes
-        this._locationService.onMapLocationChange(
-            (location) => {
-                if (location) {
-                    geocoder.setProximity({ longitude: location.lng, latitude: location.lat });
-                }
-            },
-            { realtime: false, debounceMs: 1000 }
-        );
+        autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+            if (!place.geometry) return;
 
-        // Add geocoder to the search input
-        const searchElement = document.getElementById(this._searchInput);
-        searchElement.appendChild(geocoder.onAdd(this._map));
+            const location = {
+                lng: place.geometry.location.lng(),
+                lat: place.geometry.location.lat()
+            };
 
-        // Initialize search marker
-        this._searchMarker = new mapboxgl.Marker({
-            color: '#4668F2'
-        });
-
-        // Handle search results
-        geocoder.on('result', (event) => {
-            const [lng, lat] = event.result.center;
-            const location = { lng, lat };
-            
             // Update map marker and view
-            this._mapMarker.setLngLat([lng, lat]).addTo(this._map);
+            this._mapMarker.setLngLat([location.lng, location.lat]).addTo(this._map);
             this._map.flyTo({
-                center: [lng, lat],
+                center: [location.lng, location.lat],
                 zoom: this._initialZoom
             });
 
-            // Update only map location in LocationService
+            // Store place data in similar format to Mapbox
+            this._currentPlace = this._convertGooglePlace(place);
+
+            // Update LocationService
             this._locationService.setMapLocation(location);
         });
 
-        // Clear marker when search is cleared
-        geocoder.on('clear', () => {
-            this._mapMarker.remove();
-            this._locationService.resetMapLocation();
+        // Clear button functionality
+        searchInput.addEventListener('input', (e) => {
+            if (!e.target.value) {
+                this._mapMarker.remove();
+                this._locationService.resetMapLocation();
+            }
+        });
+    }
+
+    /**
+     * Convert Google Place to Mapbox-like format
+     * @private
+     */
+    _convertGooglePlace(googlePlace) {
+        const getAddressComponent = (type) => {
+            const component = googlePlace.address_components?.find(
+                comp => comp.types.includes(type)
+            );
+            return component?.long_name;
+        };
+
+        return {
+            id: `google.${googlePlace.place_id}`,
+            type: 'Feature',
+            place_type: ['poi'],
+            text: googlePlace.name,
+            place_name: googlePlace.formatted_address,
+            center: [
+                googlePlace.geometry.location.lng(),
+                googlePlace.geometry.location.lat()
+            ],
+            context: [
+                { id: 'neighborhood', text: getAddressComponent('neighborhood') },
+                { id: 'postcode', text: getAddressComponent('postal_code') },
+                { id: 'place', text: getAddressComponent('locality') },
+                { id: 'region', text: getAddressComponent('administrative_area_level_1') },
+                { id: 'country', text: getAddressComponent('country') }
+            ].filter(item => item.text) // Remove undefined components
+        };
+    }
+
+    /**
+     * Load Google Places API
+     * @private
+     */
+    async _loadGooglePlaces() {
+        if (window.google?.places) return;
+        
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${this._googleApiKey}&libraries=places`;
+            script.async = true;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
         });
     }
 
@@ -380,22 +430,32 @@ class MapService {
      * @private
      */
     async _reverseGeocode(location) {
+        if (this._googleApiKey) {
+            await this._reverseGeocodeGoogle(location);
+        } else {
+            await this._reverseGeocodeMapbox(location);
+        }
+    }
+
+    async _reverseGeocodeGoogle(location) {
         try {
-            const response = await fetch(
-                `https://api.mapbox.com/geocoding/v5/mapbox.places/${location.lng},${location.lat}.json?` + 
-                new URLSearchParams({
-                    access_token: this._accessToken,
-                    types: 'address,poi,place',
-                    limit: 1
-                })
-            );
+            await this._loadGooglePlaces();
+            const geocoder = new google.maps.Geocoder();
             
-            const data = await response.json();
-            if (data.features && data.features.length > 0) {
-                this._currentPlace = data.features[0];  // Store the full place data
-            } else {
-                this._currentPlace = null;
-            }
+            const result = await new Promise((resolve, reject) => {
+                geocoder.geocode(
+                    { location: { lat: location.lat, lng: location.lng } },
+                    (results, status) => {
+                        if (status === 'OK' && results[0]) {
+                            resolve(results[0]);
+                        } else {
+                            reject(new Error(`Geocoding failed: ${status}`));
+                        }
+                    }
+                );
+            });
+
+            this._currentPlace = this._convertGooglePlace(result);
         } catch (error) {
             console.warn('Reverse geocoding failed:', error);
             this._currentPlace = null;
