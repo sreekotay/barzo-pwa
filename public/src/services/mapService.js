@@ -558,9 +558,9 @@ class MapService {
                 await this._reverseGeocodeMapbox(location);
             }
 
-            // Update search text using the helper method
+            // Update search text using the public method instead of non-existent private method
             if (this._currentPlace) {
-                this._updateSearchText(this._getSearchDisplayText(this._currentPlace));
+                this.updateSearchText(this._getSearchDisplayText(this._currentPlace));
             }
         } catch (error) {
             console.warn('Reverse geocoding failed:', error);
