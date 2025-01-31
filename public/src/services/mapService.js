@@ -923,6 +923,14 @@ class MapService {
         // Notify callbacks of the POI update
         this._placesChangeCallbacks.forEach(callback => callback(pois));
     }
+
+    updateSearchText(text) {
+        const searchInput = document.querySelector(this._searchInputSelector);
+        // Only update if the input doesn't have focus
+        if (searchInput && !document.activeElement.isSameNode(searchInput)) {
+            searchInput.value = text;
+        }
+    }
 }
 
 export default MapService; 
