@@ -268,7 +268,15 @@ class MapService {
             }
 
             this._locationService.setMapLocation(location);
-            this._handleNearbyPlaces(location); //poke it because of zoom change
+            
+            // Notify callbacks about the map movement
+            this._notifyCallbacks([], {
+                event: 'map_moved',
+                source: 'map_interaction',
+                location: location,
+                bounds: this._map.getBounds(),
+                zoom: this._map.getZoom()
+            });
         });
 
         // Initialize search if requested
@@ -383,6 +391,11 @@ class MapService {
             // Store place data and update location service
             this._currentPlace = this._convertGooglePlace(place);
             this._locationService.setMapLocation(location);
+
+            this._notifyCallbacks([place], {
+                event: 'place_selected',
+                source: 'autocomplete'
+            });
         });
 
         // Update the dragstart handler to clear both flags
@@ -843,9 +856,9 @@ class MapService {
                 this._addPlaceMarkers(places);
                 
                 // Notify all callbacks of the places update
-                this._placesChangeCallbacks.forEach(callback => {
-                    console.log('Calling places change callback');
-                    callback(places);
+                this._notifyCallbacks(places, { 
+                    event: 'location_change',
+                    source: 'nearby_search'
                 });
             } else {
                 console.log('No results in places response');
@@ -942,7 +955,10 @@ class MapService {
         });
 
         // Notify callbacks of the POI update
-        this._placesChangeCallbacks.forEach(callback => callback(pois));
+        this._notifyCallbacks(pois, {
+            event: 'poi_update',
+            source: options.source || 'poi_search'
+        });
     }
 
     updateSearchText(text) {
@@ -964,6 +980,17 @@ class MapService {
 
     getMapCenter() {
         return this._map.getCenter();
+    }
+
+    // Add new method to call callbacks with config
+    _notifyCallbacks(places, config = {}) {
+        this._placesChangeCallbacks.forEach(callback => {
+            callback(places, {
+                event: config.event || 'unknown',
+                source: config.source || 'unknown',
+                ...config
+            });
+        });
     }
 }
 

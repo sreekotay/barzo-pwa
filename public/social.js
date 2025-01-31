@@ -32,11 +32,7 @@ let isTransitioning = false;
 
 // Update places change callback to store data
 mapService.onPlacesChange((places) => {
-    console.log('Places update received:', places);
     currentPlaces = places;
-    if (window.placesComponent) {
-        window.placesComponent.updatePlaces(places);
-    }
 });
 
 // Update the marker click handler to handle everything

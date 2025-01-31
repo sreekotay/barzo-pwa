@@ -76,7 +76,7 @@ export default class PlacesComponent {
                 const userLocation = this._locationService.getUserLocationCached();
                 const places = this._processPlacesData(data.results, userLocation);
                 this._mapService.updateMarkers(places);
-                this.updatePlaces(places);
+                this._updatePlacesContent(places);
             }
         } catch (error) {
             console.error('Error fetching nearby places:', error);
@@ -138,7 +138,13 @@ export default class PlacesComponent {
         }
     }
 
-    updatePlaces(places) {
+    updatePlaces(places, config = {}) {
+        console.log('📦 Places update from:', config.event, config.source);
+        if (config.location) this._fetchNearbyPlaces(config.location);
+    }
+
+    // Split out the content update logic
+    _updatePlacesContent(places) {
         this._container = document.querySelector('#places-container');
         console.log('📦 Updating places container:', this._container, 'with', places?.length, 'places');
 
@@ -155,15 +161,14 @@ export default class PlacesComponent {
         }
 
         this._currentPlaces = places;
-        console.log('📍 Updating places container with', places.length, 'places');
 
+        // Get or create places-scroll container
         let placesScroll = this._container.querySelector('.places-scroll');
         if (!placesScroll) {
             console.log('📍 Creating new places-scroll container');
             placesScroll = document.createElement('div');
             placesScroll.className = 'places-scroll pb-2';
             placesScroll.innerHTML = '<div class="w-1" style="flex-shrink: 0;"></div>';
-            this._container.innerHTML = '';
             this._container.appendChild(placesScroll);
         }
 
@@ -172,27 +177,21 @@ export default class PlacesComponent {
         placesScroll.querySelectorAll('.place-card').forEach(card => {
             existingCards.set(card.dataset.placeId, card);
         });
-        console.log('📍 Found', existingCards.size, 'existing cards');
 
         // Update or create cards
         places.forEach(place => {
             let card = existingCards.get(place.place_id);
             if (card) {
-                console.log('📍 Updating existing card for', place.name);
                 this._updatePlaceCard(card, place);
                 existingCards.delete(place.place_id);
             } else {
-                console.log('📍 Creating new card for', place.name);
                 card = this._createPlaceCard(place);
                 placesScroll.appendChild(card);
             }
         });
 
         // Remove any cards that weren't reused
-        existingCards.forEach(card => {
-            console.log('📍 Removing unused card', card.dataset.placeId);
-            card.remove();
-        });
+        existingCards.forEach(card => card.remove());
 
         // Update observers and event handlers
         this._setupCardObserversAndHandlers(placesScroll);
@@ -337,7 +336,7 @@ export default class PlacesComponent {
 
                 if (mostVisibleCard && maxRatio > 0.5) {
                     const placeId = mostVisibleCard.dataset.placeId;
-                    console.log('👁️ Observer selecting:', placeId);
+                    //console.log('👁️ Observer selecting:', placeId);
                     
                     this._isUpdating = true;
                     document.querySelectorAll('.place-card').forEach(card => {
