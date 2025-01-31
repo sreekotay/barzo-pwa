@@ -339,6 +339,14 @@ class MapService {
         searchInput.placeholder = 'Where do you want to go?';
         searchInput.className = 'google-places-input';
         
+        // Add focus handler to select all text
+        searchInput.addEventListener('focus', function() {
+            // Use setTimeout to ensure this runs after the browser's default focus behavior
+            setTimeout(() => {
+                this.setSelectionRange(0, this.value.length);
+            }, 0);
+        });
+        
         const searchContainer = document.getElementById(this._searchInput);
         searchContainer.appendChild(searchInput);
 
@@ -938,7 +946,7 @@ class MapService {
     }
 
     updateSearchText(text) {
-        const searchInput = document.querySelector(this._searchInputSelector);
+        const searchInput = document.querySelector(`#${this._searchInput} input`);
         // Only update if the input doesn't have focus
         if (searchInput && !document.activeElement.isSameNode(searchInput)) {
             searchInput.value = text;
