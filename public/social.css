@@ -131,6 +131,19 @@
     animation: markerPulse 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
 }
 
+.event-marker.selected::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px;
+    height: 16px;
+    background: #4CAF50;
+    border-radius: 50%;
+    animation: markerPulse 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+}
+
 .mapboxgl-popup {
     max-width: 200px;
 }

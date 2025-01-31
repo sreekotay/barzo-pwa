@@ -841,6 +841,51 @@ class MapService {
         });
         this._map.getContainer().dispatchEvent(event);
     }
+
+    // Replace _fetchNearbyPlaces with a generic method to add POI markers
+    addPOIMarkers(pois, options = {}) {
+        // Clear existing markers
+        this._clearPlaceMarkers();
+
+        pois.forEach((poi, index) => {
+            if (poi.geometry && poi.geometry.location) {
+                // Create marker element with optional type-specific styling
+                const el = document.createElement('div');
+                el.className = `poi-marker ${options.markerClass || ''} ${index === 2 ? 'selected' : ''}`;
+                el.style.width = '12px';
+                el.style.height = '12px';
+                el.style.borderRadius = '50%';
+                el.style.backgroundColor = options.getMarkerColor?.(poi) || '#666666';
+                el.style.border = '2px solid white';
+                el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
+                el.style.cursor = 'pointer';
+
+                // Create and add marker
+                const marker = new mapboxgl.Marker({
+                    element: el
+                })
+                .setLngLat([
+                    poi.geometry.location.lng,
+                    poi.geometry.location.lat
+                ])
+                .addTo(this._map);
+
+                // Store the POI data with the marker
+                marker.poiId = poi.id;
+                marker.poiData = poi;
+
+                el.addEventListener('click', () => {
+                    this.selectMarker(poi.id);
+                    this._markerClickCallbacks.forEach(callback => callback(poi));
+                });
+
+                this._placeMarkers.push(marker);
+            }
+        });
+
+        // Notify callbacks of the POI update
+        this._placesChangeCallbacks.forEach(callback => callback(pois));
+    }
 }
 
 export default MapService; 

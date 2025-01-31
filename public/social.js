@@ -24,6 +24,13 @@ let currentIntersectionObserver = null;
 let isUpdating = false;
 let lastScrollTime = 0;
 
+// Add state for current POI type
+let currentPOIType = 'venues'; // or 'events'
+
+// Add state for tracking programmatic scrolls
+let isProgrammaticScroll = false;
+let isTransitioning = false;
+
 // Update places change callback to store data
 mapService.onPlacesChange((places) => {
     console.log('Places update received:', places);
@@ -48,7 +55,7 @@ mapService.onMarkerClick((place) => {
 
     const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
     if (card) {
-        lastScrollTime = performance.now();
+        lastScrollTime = Date.now();
         scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
     }
 
@@ -122,19 +129,29 @@ function updatePlacesContainer(places) {
         currentIntersectionObserver.disconnect();
     }
 
-    // Update the intersection observer to log timestamps
+    // Update the intersection observer to check both flags
     const observer = new IntersectionObserver(
         (entries) => {
-            if (isUpdating) return;
-            
-            // Ignore intersection events that happen too soon after a scroll
-            const now = performance.now();
-            if (now - lastScrollTime < 200) return;
+            if (isProgrammaticScroll || isTransitioning) {
+                console.log('⏭️ Skipping intersection - transition in progress');
+                return;
+            }
+
+            // Skip if we're within 2000ms of the last scroll start
+            const now = Date.now();
+            if (now - lastScrollTime < 2000) {
+                console.log('⏭️ Skipping intersection - too soon after scroll:', now - lastScrollTime);
+                return;
+            }
 
             let maxRatio = 0;
             let mostVisibleCard = null;
 
             entries.forEach(entry => {
+                console.log('👁️ Checking intersection:', 
+                    currentPlaces.find(p => p.place_id === entry.target.dataset.placeId)?.name,
+                    'ratio:', entry.intersectionRatio
+                );
                 if (entry.intersectionRatio > maxRatio) {
                     maxRatio = entry.intersectionRatio;
                     mostVisibleCard = entry.target;
@@ -143,6 +160,9 @@ function updatePlacesContainer(places) {
 
             if (mostVisibleCard && maxRatio > 0.5) {
                 const placeId = mostVisibleCard.dataset.placeId;
+                const place = currentPlaces.find(p => p.place_id === placeId);
+                console.log('✨ Selecting card:', place?.name, 'ratio:', maxRatio);
+                
                 isUpdating = true;
                 document.querySelectorAll('.place-card').forEach(card => {
                     card.dataset.selected = (card.dataset.placeId === placeId).toString();
@@ -154,7 +174,7 @@ function updatePlacesContainer(places) {
         {
             root: document.querySelector('.places-scroll'),
             threshold: [0, 0.25, 0.5, 0.75, 1],
-            rootMargin: '0px'
+            rootMargin: '-10% 0px -10% 0px'
         }
     );
 
@@ -474,6 +494,9 @@ export function initialize() {
     });
 
     initMapResize();
+
+    // Add toggle UI
+    addPOIToggle();
 }
 
 export function updateLocation() {
@@ -481,9 +504,111 @@ export function updateLocation() {
 } 
 
 export function scrollIntoViewWithOffset(el, scrollContainer, offset) {
-  scrollContainer.scrollTo({
-    behavior: 'smooth',
-    left:
-      el.getBoundingClientRect().left - offset + scrollContainer.scrollLeft,
-  })
+    console.log('🔄 Starting programmatic scroll');
+    
+    isProgrammaticScroll = true;
+    isTransitioning = true;
+    lastScrollTime = Date.now();
+    
+    scrollContainer.scrollTo({
+        behavior: 'smooth',
+        left: el.getBoundingClientRect().left - offset + scrollContainer.scrollLeft,
+    });
+    
+    const checkScrollEnd = () => {
+        const currentScroll = scrollContainer.scrollLeft;
+        
+        setTimeout(() => {
+            if (currentScroll === scrollContainer.scrollLeft) {
+                console.log('🔄 Ending programmatic scroll');
+                isProgrammaticScroll = false;
+                
+                setTimeout(() => {
+                    isTransitioning = false;
+                }, 500);
+            } else {
+                checkScrollEnd();
+            }
+        }, 50);
+    };
+    
+    checkScrollEnd();
+}
+
+// Add toggle UI
+function addPOIToggle() {
+    const toggleContainer = document.createElement('div');
+    toggleContainer.className = 'poi-toggle absolute top-4 right-4 bg-white rounded-lg shadow z-10';
+    toggleContainer.innerHTML = `
+        <div class="flex">
+            <button class="px-4 py-2 rounded-l-lg ${currentPOIType === 'venues' ? 'bg-red-600 text-white' : 'text-gray-700'}" 
+                    data-type="venues">
+                Venues
+            </button>
+            <button class="px-4 py-2 rounded-r-lg ${currentPOIType === 'events' ? 'bg-red-600 text-white' : 'text-gray-700'}" 
+                    data-type="events">
+                Events
+            </button>
+        </div>
+    `;
+    document.querySelector('#map').appendChild(toggleContainer);
+
+    // Add toggle handlers
+    toggleContainer.querySelectorAll('button').forEach(button => {
+        button.addEventListener('click', () => {
+            currentPOIType = button.dataset.type;
+            updatePOIs();
+            // Update button styles
+            toggleContainer.querySelectorAll('button').forEach(b => {
+                b.classList.toggle('bg-red-600', b.dataset.type === currentPOIType);
+                b.classList.toggle('text-white', b.dataset.type === currentPOIType);
+                b.classList.toggle('text-gray-700', b.dataset.type !== currentPOIType);
+            });
+        });
+    });
+}
+
+// Add function to fetch events from Eventbrite
+async function fetchNearbyEvents(lat, lng) {
+    const response = await fetch(`/api/events?lat=${lat}&lng=${lng}`);
+    const events = await response.json();
+    return events.map(event => ({
+        id: event.id,
+        name: event.name.text,
+        geometry: {
+            location: {
+                lat: event.venue.latitude,
+                lng: event.venue.longitude
+            }
+        },
+        vicinity: event.venue.address.localized_address_display,
+        start: event.start,
+        end: event.end,
+        // ... map other relevant fields
+    }));
+}
+
+// Update POIs based on current type
+async function updatePOIs() {
+    const location = locationService.getMapLocation();
+    if (!location) return;
+
+    if (currentPOIType === 'venues') {
+        const venues = await fetchNearbyVenues(location.lat, location.lng);
+        mapService.addPOIMarkers(venues, {
+            markerClass: 'venue-marker',
+            getMarkerColor: venue => venue.opening_hours?.open_now ? '#E31C5F' : '#666666'
+        });
+    } else {
+        const events = await fetchNearbyEvents(location.lat, location.lng);
+        mapService.addPOIMarkers(events, {
+            markerClass: 'event-marker',
+            getMarkerColor: event => {
+                const now = new Date();
+                const start = new Date(event.start.local);
+                const end = new Date(event.end.local);
+                return now >= start && now <= end ? '#4CAF50' : '#FFC107';
+            }
+        });
+    }
 }
