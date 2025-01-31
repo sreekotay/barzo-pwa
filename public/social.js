@@ -112,11 +112,6 @@ function updatePlacesContainer(places) {
                             <div class="text-gray-500 text-xs pr-1">${place.formattedDistance}</div>
                         </div>
                     </div>
-                    <img 
-                        src="/images/free-drink.png" 
-                        alt="Free Drink Available" 
-                        class="free-drink"
-                    >
                 </div>
             `).join('')}
         </div>
@@ -199,6 +194,10 @@ function initializeMobileMenu() {
     
     hamburger.addEventListener('click', toggleMenu);
     overlay.addEventListener('click', closeMenu);
+
+    // Add z-index to ensure menu is above map
+    sidebar.classList.add('z-50');
+    overlay.classList.add('z-40');
 
     function toggleMenu() {
         hamburger.classList.toggle('open');
@@ -293,6 +292,10 @@ function router() {
     const mainContent = document.querySelector('#main-content');
     const path = window.location.hash.slice(1) || 'home';
     const content = routes[path] || routes.home;
+    
+    // Add z-index class to ensure content is above map
+    mainContent.className = 'relative z-20'; // Add z-index positioning
+    
     mainContent.innerHTML = content;
     console.log('Content updated for main-content');
 
@@ -306,6 +309,17 @@ function initMapResize() {
     const mapElement = document.getElementById('map');
     const resizeHandle = document.getElementById('map-resize-handle');
     let startY, startHeight;
+    
+    // Add debounce function
+    let resizeTimeout;
+    function debouncedResize() {
+        if (resizeTimeout) clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            if (mapService._map) {
+                mapService._map.resize();
+            }
+        }, 16); // roughly one frame at 60fps
+    }
 
     // Mouse events
     resizeHandle.addEventListener('mousedown', initDrag);
@@ -314,13 +328,10 @@ function initMapResize() {
     resizeHandle.addEventListener('touchstart', initDrag, { passive: false });
 
     function initDrag(e) {
-        e.preventDefault(); // Prevent scrolling when touching the handle
-        
-        // Get initial positions
+        e.preventDefault();
         startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
         startHeight = parseInt(getComputedStyle(mapElement).height);
         
-        // Add appropriate event listeners
         if (e.type === 'mousedown') {
             document.addEventListener('mousemove', doDrag);
             document.addEventListener('mouseup', stopDrag);
@@ -331,28 +342,26 @@ function initMapResize() {
     }
 
     function doDrag(e) {
-        e.preventDefault(); // Prevent scrolling during drag
-        
-        // Get current position
+        e.preventDefault();
         const currentY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
         const newHeight = startHeight + (currentY - startY);
-        
-        // Constrain height between min and max values
-        const constrainedHeight = Math.min(Math.max(newHeight, 200), window.innerHeight * 0.8);
+        const constrainedHeight = Math.min(Math.max(newHeight, 0), window.innerHeight * 0.8);
         mapElement.style.height = `${constrainedHeight}px`;
         
-        // Trigger a resize event for the map
-        if (mapService._map) {
-            mapService._map.resize();
-        }
+        // Use debounced resize instead of immediate resize
+        debouncedResize();
     }
 
     function stopDrag() {
-        // Remove all event listeners
         document.removeEventListener('mousemove', doDrag);
         document.removeEventListener('mouseup', stopDrag);
         document.removeEventListener('touchmove', doDrag);
         document.removeEventListener('touchend', stopDrag);
+        
+        // Force a final resize after drag ends
+        if (mapService._map) {
+            mapService._map.resize();
+        }
     }
 }
 
@@ -361,8 +370,8 @@ function initializeBottomSheet() {
     // Create and append bottom sheet elements
     const sheetContainer = document.createElement('div');
     sheetContainer.innerHTML = `
-        <div class="place-details-backdrop"></div>
-        <div class="place-details-sheet">
+        <div class="place-details-backdrop z-30"></div>
+        <div class="place-details-sheet z-40">
             <button class="close-button">&times;</button>
             <div class="details"></div>
         </div>
