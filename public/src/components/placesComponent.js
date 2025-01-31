@@ -235,6 +235,7 @@ export default class PlacesComponent {
                 <h3 class="name"></h3>
                 <div class="flex" style="align-items: baseline;">
                     <div class="status"></div>
+                    <div class="price-level text-gray-500 text-xs ml-2"></div>
                     <div class="flex-1"></div>
                     <div class="text-gray-500 text-xs pr-1"></div>
                 </div>
@@ -286,6 +287,12 @@ export default class PlacesComponent {
         if (statusEl) {
             statusEl.className = `status ${place.opening_hours?.open_now ? 'open' : 'closed'}`;
             statusEl.textContent = place.opening_hours?.open_now ? 'OPEN' : 'CLOSED';
+        }
+
+        // Update price level
+        const priceEl = card.querySelector('.price-level');
+        if (priceEl) {
+            priceEl.textContent = place.price_level ? '$'.repeat(place.price_level) : '';
         }
 
         // Update distance
