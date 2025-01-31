@@ -944,6 +944,19 @@ class MapService {
             searchInput.value = text;
         }
     }
+
+    updateMarkers(places) {
+        this._clearPlaceMarkers();
+        this._addPlaceMarkers(places);
+    }
+
+    getMapBounds() {
+        return this._map.getBounds();
+    }
+
+    getMapCenter() {
+        return this._map.getCenter();
+    }
 }
 
 export default MapService; 

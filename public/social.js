@@ -2,6 +2,7 @@ import locationService from '/src/services/locationService.js';
 locationService.requestGeoLocation();
 
 import MapService from '/src/services/mapService.js';
+import PlacesComponent from '/src/components/placesComponent.js';
 
 const mapService = new MapService(locationService, {
     mapContainer: 'map',
@@ -9,9 +10,7 @@ const mapService = new MapService(locationService, {
     googleApiKey: 'AIzaSyDy1nNu0vLAHvnSJHPVVHPmPuJmlq3NSlo',
     searchInput: 'search-container',
     searchInputLevel: 'neighborhood',
-    initialZoom: 13,
-    nearbyPlaces: 30,
-    placesEndpoint: 'supabase'  // Make sure we're using Supabase endpoint
+    initialZoom: 13
 });
 
 mapService.initialize();
@@ -34,8 +33,10 @@ let isTransitioning = false;
 // Update places change callback to store data
 mapService.onPlacesChange((places) => {
     console.log('Places update received:', places);
-    currentPlaces = places; // Store the places data
-    updatePlacesContainer(places);
+    currentPlaces = places;
+    if (window.placesComponent) {
+        window.placesComponent.updatePlaces(places);
+    }
 });
 
 // Update the marker click handler to handle everything
@@ -56,7 +57,7 @@ mapService.onMarkerClick((place) => {
     const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
     if (card) {
         lastScrollTime = Date.now();
-        scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
+        placesComponent.scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
     }
 
     mapService.selectMarker(place.place_id);
@@ -71,214 +72,6 @@ mapService.onMarkerClick((place) => {
         isUpdating = false;
     }, 100);
 });
-
-// Update the updatePlacesContainer function
-function updatePlacesContainer(places) {
-    const placesContainer = document.querySelector('#places-container');
-    if (!placesContainer) {
-        console.log('No places container found');
-        return;
-    }
-
-    if (!places || places.length === 0) {
-        console.log('No places data received');
-        placesContainer.style.height = '0';
-        placesContainer.innerHTML = '<p>No places found nearby</p>';
-        return;
-    }
-
-    console.log('📍 Updating places container with', places.length, 'places');
-
-    let placesScroll = placesContainer.querySelector('.places-scroll');
-    if (!placesScroll) {
-        console.log('📍 Creating new places-scroll container');
-        placesScroll = document.createElement('div');
-        placesScroll.className = 'places-scroll pb-2';
-        placesScroll.innerHTML = '<div class="w-1" style="flex-shrink: 0;"></div>';
-        placesContainer.innerHTML = '';
-        placesContainer.appendChild(placesScroll);
-    }
-
-    // Get existing cards and create a map of placeId -> card
-    const existingCards = new Map();
-    placesScroll.querySelectorAll('.place-card').forEach(card => {
-        existingCards.set(card.dataset.placeId, card);
-    });
-    console.log('📍 Found', existingCards.size, 'existing cards');
-
-    // Update or create cards
-    places.forEach(place => {
-        let card = existingCards.get(place.place_id);
-        if (card) {
-            console.log('📍 Updating existing card for', place.name);
-            updatePlaceCard(card, place);
-            existingCards.delete(place.place_id);
-        } else {
-            console.log('📍 Creating new card for', place.name);
-            card = createPlaceCard(place);
-            placesScroll.appendChild(card);
-        }
-    });
-
-    // Remove any cards that weren't reused
-    existingCards.forEach(card => {
-        console.log('📍 Removing unused card', card.dataset.placeId);
-        card.remove();
-    });
-
-    // Update observers and event handlers
-    setupCardObserversAndHandlers(placesScroll);
-}
-
-function createPlaceCard(place) {
-    const card = document.createElement('div');
-    card.className = 'place-card';
-    card.dataset.placeId = place.place_id;
-    
-    // Create the basic structure
-    card.innerHTML = `
-        ${place.photos && place.photos.length > 0 ? `
-            <div class="place-image">
-                <img 
-                    src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${mapService._googleApiKey}"
-                    alt="${place.name}"
-                    loading="lazy"
-                >
-            </div>
-        ` : ''}
-        <div class="flex-1 px-2 pb-2">
-            <div class="types-scroll nowrap"></div>
-            <h3 class="name"></h3>
-            <div class="flex" style="align-items: baseline;">
-                <div class="status"></div>
-                <div class="flex-1"></div>
-                <div class="text-gray-500 text-xs pr-1"></div>
-            </div>
-        </div>
-    `;
-
-    // Update the content
-    updatePlaceCard(card, place);
-    return card;
-}
-
-function updatePlaceCard(card, place) {
-    // Update photo if it exists
-    const existingImage = card.querySelector('.place-image img');
-    if (place.photos && place.photos.length > 0) {
-        const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${mapService._googleApiKey}`;
-        if (existingImage) {
-            if (existingImage.src !== photoUrl) {
-                existingImage.src = photoUrl;
-            }
-        } else {
-            const imageDiv = document.createElement('div');
-            imageDiv.className = 'place-image';
-            imageDiv.innerHTML = `<img src="${photoUrl}" alt="${place.name}" loading="lazy">`;
-            card.insertBefore(imageDiv, card.firstChild);
-        }
-    } else if (existingImage) {
-        existingImage.parentElement.remove();
-    }
-
-    // Update types
-    const typesDiv = card.querySelector('.types-scroll');
-    const types = (place.types || [])
-        .filter(type => !['point_of_interest', 'establishment'].includes(type))
-        .map((type, index, array) => `
-            <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>${index < array.length - 1 ? '<span class="text-gray-300"> | </span>' : ''}
-        `).join('');
-    if (typesDiv) {
-        typesDiv.innerHTML = types;
-    }
-
-    // Update name
-    const nameEl = card.querySelector('.name');
-    if (nameEl) {
-        nameEl.textContent = place.name;
-    }
-
-    // Update status
-    const statusEl = card.querySelector('.status');
-    if (statusEl) {
-        statusEl.className = `status ${place.opening_hours?.open_now ? 'open' : 'closed'}`;
-        statusEl.textContent = place.opening_hours?.open_now ? 'OPEN' : 'CLOSED';
-    }
-
-    // Update distance
-    const distanceEl = card.querySelector('.text-gray-500.text-xs.pr-1');
-    if (distanceEl) {
-        distanceEl.textContent = place.formattedDistance;
-    }
-}
-
-function setupCardObserversAndHandlers(placesScroll) {
-    // Cleanup any existing observer
-    if (currentIntersectionObserver) {
-        currentIntersectionObserver.disconnect();
-    }
-
-    // Create new observer
-    const observer = new IntersectionObserver(
-        (entries) => {
-            if (isProgrammaticScroll || isTransitioning) return;
-            const now = Date.now();
-            if (now - lastScrollTime < 2000) return;
-
-            let maxRatio = 0;
-            let mostVisibleCard = null;
-
-            entries.forEach(entry => {
-                if (entry.intersectionRatio > maxRatio) {
-                    maxRatio = entry.intersectionRatio;
-                    mostVisibleCard = entry.target;
-                }
-            });
-
-            if (mostVisibleCard && maxRatio > 0.5) {
-                const placeId = mostVisibleCard.dataset.placeId;
-                console.log('👁️ Observer selecting:', placeId);
-                
-                isUpdating = true;
-                document.querySelectorAll('.place-card').forEach(card => {
-                    card.dataset.selected = (card.dataset.placeId === placeId).toString();
-                });
-                mapService.selectMarker(placeId);
-                isUpdating = false;
-            }
-        },
-        {
-            root: placesScroll,
-            threshold: [0, 0.25, 0.5, 0.75, 1],
-            rootMargin: '-10% 0px -10% 0px'
-        }
-    );
-
-    // Add click handlers and observe cards
-    placesScroll.querySelectorAll('.place-card').forEach(card => {
-        observer.observe(card);
-        
-        card.addEventListener('click', () => {
-            if (isUpdating) return;
-            isUpdating = true;
-            
-            const placeId = card.dataset.placeId;
-            console.log('🎯 Card clicked:', placeId);
-            mapService.selectMarker(placeId);
-            
-            scrollIntoViewWithOffset(card, placesScroll, 16);
-            
-            const place = currentPlaces.find(p => p.place_id === placeId);
-            if (place) {
-                showPlaceDetails(place);
-            }
-            
-            isUpdating = false;
-        });
-    });
-
-    currentIntersectionObserver = observer;
-}
 
 // Private functions
 function initializeMobileMenu() {
@@ -401,15 +194,20 @@ function router() {
     const path = window.location.hash.slice(1) || 'home';
     const content = routes[path] || routes.home;
     
-    // Add z-index class to ensure content is above map
-    mainContent.className = 'relative z-20'; // Add z-index positioning
-    
+    mainContent.className = 'relative z-20';
     mainContent.innerHTML = content;
     console.log('Content updated for main-content');
 
-    // Re-render places if we're on the home route and have places data
-    if (path === 'home' && currentPlaces.length > 0) {
-        updatePlacesContainer(currentPlaces);
+    // Initialize places component when on home route
+    if (path === 'home') {
+        if (!window.placesComponent) {
+            console.log('📦 Creating places component');
+            window.placesComponent = new PlacesComponent(mapService, locationService);
+        }
+        if (currentPlaces.length > 0) {
+            console.log('📦 Updating places with existing data');
+            window.placesComponent.updatePlaces(currentPlaces);
+        }
     }
 
     // Add toggle handlers
@@ -418,7 +216,7 @@ function router() {
         toggleContainer.querySelectorAll('button').forEach(button => {
             button.addEventListener('click', () => {
                 currentPOIType = button.dataset.type;
-                updatePOIs();
+                placesComponent.updatePOIs();
                 // Update button styles
                 toggleContainer.querySelectorAll('button').forEach(b => {
                     b.classList.toggle('bg-red-600', b.dataset.type === currentPOIType);
