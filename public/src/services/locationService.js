@@ -218,7 +218,7 @@ class LocationService {
     }
 
     setMapLocation(location) {
-        if (!this._isLocationChangeMaterial(this._mapLocation, location)) {
+        if (!this._isLocationChangeSignificant(this._mapLocation, location)) {
             return; // Skip if change is not material
         }
 
@@ -396,7 +396,7 @@ class LocationService {
                     };
                     
                     // Only update if location has changed significantly (more than 10 meters)
-                    if (this._hasLocationChangedSignificantly(newLocation, this._userLocation)) {
+                    if (this._isLocationChangeSignificant(newLocation, this._userLocation, 10)) {
                         this._userLocation = newLocation;
                         this._userLocationCached = newLocation;
                         this._userLocationCachedTS = Date.now();
@@ -447,32 +447,6 @@ class LocationService {
 
             throw new Error(errorMessage);
         }
-    }
-
-    /**
-     * Calculates if the location has changed significantly (more than 10 meters)
-     * @private
-     * @param {LatLng} location1 
-     * @param {LatLng} location2 
-     * @returns {boolean}
-     */
-    _hasLocationChangedSignificantly(location1, location2) {
-        if (!location1 || !location2) return true;
-
-        // Approximate distance calculation using the Haversine formula
-        const R = 6371e3; // Earth's radius in meters
-        const φ1 = location1.lat * Math.PI/180;
-        const φ2 = location2.lat * Math.PI/180;
-        const Δφ = (location2.lat - location1.lat) * Math.PI/180;
-        const Δλ = (location2.lng - location1.lng) * Math.PI/180;
-
-        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ/2) * Math.sin(Δλ/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-        const distance = R * c;
-        return distance > 10; // Return true if distance is more than 10 meters
     }
 
     /**
@@ -636,23 +610,30 @@ class LocationService {
         return R * c; // Distance in meters
     }
 
-    // Add method to check if location change is material
-    _isLocationChangeMaterial(oldLocation, newLocation) {
-        if (!oldLocation || !newLocation) return true;
-        
+    /**
+     * Checks if the distance between two locations exceeds a threshold
+     * @private
+     * @param {LatLng} location1 
+     * @param {LatLng} location2 
+     * @param {number} [thresholdMeters=1] - Distance threshold in meters
+     * @returns {boolean}
+     */
+    _isLocationChangeSignificant(location1, location2, thresholdMeters = 1) {
+        if (!location1 || !location2) return true;
+
         const distance = this._calculateDistance(
-            oldLocation.lat,
-            oldLocation.lng,
-            newLocation.lat,
-            newLocation.lng
+            location1.lat,
+            location1.lng,
+            location2.lat,
+            location2.lng
         );
         
-        return distance >= this._distanceThresholdMeters;
+        return distance >= thresholdMeters;
     }
 
     // Update setUserLocation to check for material changes
     setUserLocation(location) {
-        if (!this._isLocationChangeMaterial(this._userLocation, location)) {
+        if (!this._isLocationChangeSignificant(this._userLocation, location)) {
             return; // Skip if change is not material
         }
 

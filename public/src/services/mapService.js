@@ -381,14 +381,6 @@ class MapService {
             this._isManualFromAutocomplete = false;
             // Don't clear _isManualMap here as we want to stay in manual mode when dragging
         });
-
-        // Clear button functionality
-        searchInput.addEventListener('input', (e) => {
-            if (!e.target.value) {
-                this._mapMarker.remove();
-                this._locationService.resetMapLocation();
-            }
-        });
     }
 
     /**
