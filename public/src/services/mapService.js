@@ -202,9 +202,8 @@ class MapService {
         this._locationService.onMapLocationChange(
             async (location) => {
                 await this._reverseGeocode(location);
-                // Update search input if it exists
                 if (this._searchInput && this._currentPlace && 
-                    (!this._isManualFromAutocomplete || !this._locationService._isManualMap)) {
+                    (!this._isManualFromAutocomplete || !this._locationService.isManualMode())) {
                     const searchInput = document.querySelector('.google-places-input');
                     if (searchInput) {
                         searchInput.value = this._getSearchDisplayText(this._currentPlace);
@@ -212,8 +211,8 @@ class MapService {
                 }
             },
             {
-                realtime: false,    // Don't need realtime for geocoding
-                debounceMs: 1000    // Debounce to avoid too many API calls
+                realtime: false,
+                debounceMs: 1000
             }
         );
 
@@ -357,9 +356,9 @@ class MapService {
                 lat: place.geometry.location.lat()
             };
 
-            // Set both flags when selecting from autocomplete
+            // Set flags when selecting from autocomplete
             this._isManualFromAutocomplete = true;
-            this._locationService._isManualMap = true;  // Set manual map mode
+            this._locationService.setManualMode(true);  // Use proper method
 
             if (this._onAutocompleteSelect) {
                 this._onAutocompleteSelect();
@@ -548,8 +547,8 @@ class MapService {
      * @private
      */
     async _reverseGeocode(location) {
-        // Skip reverse geocoding if manual from autocomplete AND in manual mode
-        if (this._isManualFromAutocomplete && this._locationService._isManualMap) {
+        // Use proper method to check manual mode
+        if (this._isManualFromAutocomplete && this._locationService.isManualMode()) {
             return;
         }
 

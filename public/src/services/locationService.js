@@ -604,6 +604,15 @@ class LocationService {
         if (!this._userLocationCachedTS) return null;
         return Date.now() - this._userLocationCachedTS;
     }
+
+    // Add public methods to manage manual mode
+    setManualMode(isManual) {
+        this._isManualMap = isManual;
+    }
+
+    isManualMode() {
+        return this._isManualMap;
+    }
 }
 
 export default new LocationService(); 
