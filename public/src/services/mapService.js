@@ -723,7 +723,7 @@ class MapService {
         }
         
         try {
-            const radius = this._calculateRadius();
+            const radius = this._calculateRadius() / 2;
             console.log('Fetching places for location:', location, 'radius:', radius);
             
             let endpoint, requestBody;
