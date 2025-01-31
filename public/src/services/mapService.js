@@ -268,6 +268,7 @@ class MapService {
             }
 
             this._locationService.setMapLocation(location);
+            this._handleNearbyPlaces(location); //poke it because of zoom change
         });
 
         // Initialize search if requested
