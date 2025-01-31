@@ -19,6 +19,11 @@ mapService.initialize();
 // Keep track of places data
 let currentPlaces = [];
 
+// Add at the top with other state variables
+let currentIntersectionObserver = null;
+let isUpdating = false;
+let lastScrollTime = 0;
+
 // Update places change callback to store data
 mapService.onPlacesChange((places) => {
     console.log('Places update received:', places);
@@ -26,7 +31,41 @@ mapService.onPlacesChange((places) => {
     updatePlacesContainer(places);
 });
 
-// Separate function to update places container
+// Update the marker click handler to handle everything
+mapService.onMarkerClick((place) => {
+    if (isUpdating) return;
+    isUpdating = true;
+
+    // Disconnect observer before any changes
+    if (currentIntersectionObserver) {
+        currentIntersectionObserver.disconnect();
+    }
+
+    // Update card borders and scroll
+    document.querySelectorAll('.place-card').forEach(card => {
+        card.dataset.selected = (card.dataset.placeId === place.place_id).toString();
+    });
+
+    const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
+    if (card) {
+        lastScrollTime = performance.now();
+        scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
+    }
+
+    mapService.selectMarker(place.place_id);
+
+    // Re-observe after a delay
+    setTimeout(() => {
+        if (currentIntersectionObserver) {
+            document.querySelectorAll('.place-card').forEach(card => {
+                currentIntersectionObserver.observe(card);
+            });
+        }
+        isUpdating = false;
+    }, 100);
+});
+
+// Update the updatePlacesContainer function
 function updatePlacesContainer(places) {
     const placesContainer = document.querySelector('#places-container');
     if (!placesContainer) {
@@ -36,10 +75,12 @@ function updatePlacesContainer(places) {
 
     if (!places || places.length === 0) {
         console.log('No places data received');
+        placesContainer.style.height = '0';
         placesContainer.innerHTML = '<p>No places found nearby</p>';
         return;
     }
 
+    // First update the content
     placesContainer.innerHTML = `
         <div class="places-scroll pb-2">
             <div class="w-1" style="flex-shrink: 0;"></div>
@@ -81,14 +122,71 @@ function updatePlacesContainer(places) {
         </div>
     `;
 
-    // Add click handlers to cards
+    // Cleanup any existing observer
+    if (currentIntersectionObserver) {
+        currentIntersectionObserver.disconnect();
+    }
+
+    // Update the intersection observer to log timestamps
+    const observer = new IntersectionObserver(
+        (entries) => {
+            if (isUpdating) return;
+            
+            // Ignore intersection events that happen too soon after a scroll
+            const now = performance.now();
+            if (now - lastScrollTime < 200) return;
+
+            let maxRatio = 0;
+            let mostVisibleCard = null;
+
+            entries.forEach(entry => {
+                if (entry.intersectionRatio > maxRatio) {
+                    maxRatio = entry.intersectionRatio;
+                    mostVisibleCard = entry.target;
+                }
+            });
+
+            if (mostVisibleCard && maxRatio > 0.5) {
+                const placeId = mostVisibleCard.dataset.placeId;
+                isUpdating = true;
+                document.querySelectorAll('.place-card').forEach(card => {
+                    card.dataset.selected = (card.dataset.placeId === placeId).toString();
+                });
+                mapService.selectMarker(placeId);
+                isUpdating = false;
+            }
+        },
+        {
+            root: document.querySelector('.places-scroll'),
+            threshold: [0, 0.25, 0.5, 0.75, 1],
+            rootMargin: '0px'
+        }
+    );
+
+    // Observe all place cards
+    placesContainer.querySelectorAll('.place-card').forEach(card => {
+        observer.observe(card);
+    });
+
+    // Store observer for cleanup
+    currentIntersectionObserver = observer;
+
+    // Update card click handler to handle marker selection and show details
     placesContainer.querySelectorAll('.place-card').forEach(card => {
         card.addEventListener('click', () => {
+            if (isUpdating) return;
+            isUpdating = true;
+            
             const placeId = card.dataset.placeId;
-            const marker = mapService._placeMarkers.find(m => m.placeId === placeId);
-            if (marker) {
-                marker.getElement().click();
+            mapService.selectMarker(placeId);
+            
+            // Show bottom sheet
+            const place = currentPlaces.find(p => p.place_id === placeId);
+            if (place) {
+                showPlaceDetails(place);
             }
+            
+            isUpdating = false;
         });
     });
 }
@@ -204,9 +302,153 @@ function router() {
     }
 }
 
+function initMapResize() {
+    const mapElement = document.getElementById('map');
+    const resizeHandle = document.getElementById('map-resize-handle');
+    let startY, startHeight;
+
+    // Mouse events
+    resizeHandle.addEventListener('mousedown', initDrag);
+    
+    // Touch events
+    resizeHandle.addEventListener('touchstart', initDrag, { passive: false });
+
+    function initDrag(e) {
+        e.preventDefault(); // Prevent scrolling when touching the handle
+        
+        // Get initial positions
+        startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
+        startHeight = parseInt(getComputedStyle(mapElement).height);
+        
+        // Add appropriate event listeners
+        if (e.type === 'mousedown') {
+            document.addEventListener('mousemove', doDrag);
+            document.addEventListener('mouseup', stopDrag);
+        } else {
+            document.addEventListener('touchmove', doDrag, { passive: false });
+            document.addEventListener('touchend', stopDrag);
+        }
+    }
+
+    function doDrag(e) {
+        e.preventDefault(); // Prevent scrolling during drag
+        
+        // Get current position
+        const currentY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
+        const newHeight = startHeight + (currentY - startY);
+        
+        // Constrain height between min and max values
+        const constrainedHeight = Math.min(Math.max(newHeight, 200), window.innerHeight * 0.8);
+        mapElement.style.height = `${constrainedHeight}px`;
+        
+        // Trigger a resize event for the map
+        if (mapService._map) {
+            mapService._map.resize();
+        }
+    }
+
+    function stopDrag() {
+        // Remove all event listeners
+        document.removeEventListener('mousemove', doDrag);
+        document.removeEventListener('mouseup', stopDrag);
+        document.removeEventListener('touchmove', doDrag);
+        document.removeEventListener('touchend', stopDrag);
+    }
+}
+
+// Add this near the top of the file after other initialization code
+function initializeBottomSheet() {
+    // Create and append bottom sheet elements
+    const sheetContainer = document.createElement('div');
+    sheetContainer.innerHTML = `
+        <div class="place-details-backdrop"></div>
+        <div class="place-details-sheet">
+            <button class="close-button">&times;</button>
+            <div class="details"></div>
+        </div>
+    `;
+    document.body.appendChild(sheetContainer);
+    
+    // Setup close handlers
+    const sheet = sheetContainer.querySelector('.place-details-sheet');
+    const backdrop = sheetContainer.querySelector('.place-details-backdrop');
+    const closeButton = sheet.querySelector('.close-button');
+    
+    [backdrop, closeButton].forEach(el => {
+        el.addEventListener('click', () => {
+            sheet.classList.remove('active');
+            backdrop.classList.remove('active');
+        });
+    });
+}
+
+// Add this function to handle showing place details
+function showPlaceDetails(place) {
+    const sheet = document.querySelector('.place-details-sheet');
+    const backdrop = document.querySelector('.place-details-backdrop');
+    const detailsDiv = sheet.querySelector('.details');
+    
+    // Format types for display
+    const formattedTypes = (place.types || [])
+        .filter(type => !['point_of_interest', 'establishment'].includes(type))
+        .map(type => type.replace(/_/g, ' '))
+        .join(', ') || 'Business';
+    
+    // Build the content HTML
+    let contentHTML = `
+        <div class="content-grid">
+            <div class="main-info">
+                <div class="place-type">${formattedTypes}</div>
+                <h2 class="name">${place.name || 'Unnamed Location'}</h2>
+            </div>
+
+            <div class="info-row">
+                <span class="material-icons">schedule</span>
+                ${place.opening_hours?.open_now !== undefined
+                    ? `<span class="${place.opening_hours.open_now ? 'open' : 'closed'}">${place.opening_hours.open_now ? 'OPEN' : 'CLOSED'}</span>`
+                    : `<span class="unknown">Status unknown</span>`
+                }
+            </div>
+
+            <div class="info-row">
+                <span class="material-icons">place</span>
+                <span>${place.vicinity || 'Address not available'}</span>
+            </div>
+
+            ${place.rating ? `
+                <div class="info-row">
+                    <span class="material-icons">star</span>
+                    <span>${place.rating} ⭐️ (${place.user_ratings_total || 0})</span>
+                </div>
+            ` : ''}
+        </div>
+
+        ${place.photos && place.photos.length > 0 ? `
+            <div class="photos">
+                <div class="photo-grid">
+                    ${place.photos.map(photo => `
+                        <img 
+                            src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${mapService._googleApiKey}"
+                            alt="${place.name}"
+                            loading="lazy"
+                        >
+                    `).join('')}
+                </div>
+            </div>
+        ` : ''}
+    `;
+
+    // Update content and show the sheet
+    detailsDiv.innerHTML = contentHTML;
+    sheet.classList.add('active');
+    backdrop.classList.add('active');
+}
+
+// Call initializeBottomSheet in the initialize function
 export function initialize() {
     locationService.requestGeoLocation();
     const { closeMenu } = initializeMobileMenu();
+    initializeBottomSheet();
     router(); // Initial route
     
     // Handle route changes
@@ -221,8 +463,18 @@ export function initialize() {
             }
         });
     });
+
+    initMapResize();
 }
 
 export function updateLocation() {
     return locationService.getUserLocation();
 } 
+
+export function scrollIntoViewWithOffset(el, scrollContainer, offset) {
+  scrollContainer.scrollTo({
+    behavior: 'smooth',
+    left:
+      el.getBoundingClientRect().left - offset + scrollContainer.scrollLeft,
+  })
+}

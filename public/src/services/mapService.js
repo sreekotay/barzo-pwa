@@ -81,6 +81,9 @@ class MapService {
         this._placeMarkers = [];  // Array to store place markers
 
         this._placesChangeCallbacks = [];
+        this._markerClickCallbacks = [];
+        this._markerSelectCallbacks = [];
+        this._selectedMarkerId = null;
     }
 
     /**
@@ -89,29 +92,6 @@ class MapService {
     async initialize() {
         // Load Mapbox GL JS
         await this._loadMapboxGL();
-        
-        // Remove the style injection code and just create containers
-        const sheetContainer = document.createElement('div');
-        sheetContainer.innerHTML = `
-            <div class="place-details-backdrop"></div>
-            <div class="place-details-sheet">
-                <button class="close-button">&times;</button>
-                <div class="details"></div>
-            </div>
-        `;
-        document.body.appendChild(sheetContainer);
-        
-        // Setup sheet close handlers
-        const sheet = sheetContainer.querySelector('.place-details-sheet');
-        const backdrop = sheetContainer.querySelector('.place-details-backdrop');
-        const closeButton = sheet.querySelector('.close-button');
-        
-        [backdrop, closeButton].forEach(el => {
-            el.addEventListener('click', () => {
-                sheet.classList.remove('active');
-                backdrop.classList.remove('active');
-            });
-        });
         
         // Get cached location
         const cachedLocation = this._locationService.getUserLocationCached();
@@ -253,8 +233,16 @@ class MapService {
             this._locationService.setMapLocation(cachedLocation);
         }
 
-        // Remove the moveend listener since we're using callbacks
+        // Update marker position during movement - only for the map marker
         this._map.on('move', () => {
+            const center = this._map.getCenter();
+            if (this._mapMarker) {  // Only update the map marker
+                this._mapMarker.setLngLat([center.lng, center.lat]);
+            }
+        });
+
+        // Update location service and fetch new places only when movement ends
+        this._map.on('moveend', () => {
             const center = this._map.getCenter();
             const location = {
                 lng: center.lng,
@@ -621,149 +609,43 @@ class MapService {
      * @param {Array} places - Array of place results from Google Places API
      */
     _addPlaceMarkers(places) {
-        // Create a map of existing markers by place ID
-        const existingMarkers = new Map(
-            this._placeMarkers.map(marker => [marker.placeId, marker])
-        );
+        // Clear existing markers
+        this._clearPlaceMarkers();
 
-        // Create a set of new place IDs
-        const newPlaceIds = new Set(places.map(place => place.place_id));
-
-        // Remove markers that are no longer in the results
-        this._placeMarkers = this._placeMarkers.filter(marker => {
-            if (!newPlaceIds.has(marker.placeId)) {
-                marker.remove();
-                return false;
-            }
-            return true;
-        });
-
-        places.forEach(place => {
+        places.forEach((place, index) => {
             if (place.geometry && place.geometry.location) {
-                const existingMarker = existingMarkers.get(place.place_id);
-                
-                if (existingMarker) {
-                    // Update existing marker position and data
-                    existingMarker.setLngLat([
-                        place.geometry.location.lng,
-                        place.geometry.location.lat
-                    ]);
-                    existingMarker.placeData = place; // Update the stored place data
-                    
-                    // Update marker color based on open/closed status
-                    const markerEl = existingMarker.getElement();
-                    markerEl.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#666666';
-                } else {
-                    // Create new marker
-                    const el = document.createElement('div');
-                    el.className = 'place-marker';
-                    el.style.width = '12px';
-                    el.style.height = '12px';
-                    el.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#666666';
-                    el.style.borderRadius = '50%';
-                    el.style.border = '2px solid white';
-                    el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
-                    el.style.cursor = 'pointer';
+                // Create marker element
+                const el = document.createElement('div');
+                el.className = `place-marker${index === 2 ? ' selected' : ''}`;
+                el.style.width = '12px';
+                el.style.height = '12px';
+                el.style.borderRadius = '50%';
+                el.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#666666';
+                el.style.border = '2px solid white';
+                el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
+                el.style.cursor = 'pointer';
 
-                    // Create and add marker
-                    const marker = new mapboxgl.Marker(el)
-                        .setLngLat([
-                            place.geometry.location.lng,
-                            place.geometry.location.lat
-                        ])
-                        .addTo(this._map);
+                // Create and add marker
+                const marker = new mapboxgl.Marker({
+                    element: el
+                })
+                .setLngLat([
+                    place.geometry.location.lng,
+                    place.geometry.location.lat
+                ])
+                .addTo(this._map);
 
-                    // Store the full place data with the marker
-                    marker.placeId = place.place_id;
-                    marker.placeData = place;
+                // Store the place data with the marker
+                marker.placeId = place.place_id;
+                marker.placeData = place;
 
-                    // Add click handler to show details sheet
-                    el.addEventListener('click', () => {
-                        console.log('Stored place data:', marker.placeData);
-                        
-                        const sheet = document.querySelector('.place-details-sheet');
-                        const backdrop = document.querySelector('.place-details-backdrop');
-                        const detailsDiv = sheet.querySelector('.details');
-                        
-                        // Use the stored place data for display
-                        const storedPlace = marker.placeData;
-                        
-                        // Format types for display - with safety checks
-                        const formattedTypes = (storedPlace.types || [])
-                            .filter(type => !['point_of_interest', 'establishment'].includes(type))
-                            .map(type => type.replace(/_/g, ' '))
-                            .join(', ') || 'Business';
-                        
-                        // Build the content HTML
-                        let contentHTML = `
-                            <div class="content-grid">
-                                <div class="main-info">
-                                    <div class="place-type">${formattedTypes}</div>
-                                    <h2 class="name">${storedPlace.name || 'Unnamed Location'}</h2>
-                                </div>
+                // Simplified click handler - just select marker
+                el.addEventListener('click', () => {
+                    this.selectMarker(place.place_id);
+                    this._markerClickCallbacks.forEach(callback => callback(place));
+                });
 
-                                <div class="info-row">
-                                    <span class="material-icons">schedule</span>
-                                    ${storedPlace.opening_hours?.open_now !== undefined
-                                        ? `<span class="${storedPlace.opening_hours.open_now ? 'open' : 'closed'}">${storedPlace.opening_hours.open_now ? 'OPEN' : 'CLOSED'}</span>`
-                                        : `<span class="unknown">Status unknown</span>`
-                                    }
-                                </div>
-
-                                <div class="info-row">
-                                    <span class="material-icons">payments</span>
-                                    <span class="price-level">
-                                        ${storedPlace.price_level ? '$'.repeat(storedPlace.price_level) : 'Price not specified'}
-                                    </span>
-                                </div>
-
-                                <div class="info-row">
-                                    <span class="material-icons">place</span>
-                                    <span>${storedPlace.vicinity || 'Address not available'}</span>
-                                </div>
-
-                                ${storedPlace.rating ? `
-                                    <div class="info-row">
-                                        <img 
-                                            src="${storedPlace.icon || ''}" 
-                                            alt="Place icon"
-                                            style="width: 24px; height: 24px; background-color: ${storedPlace.icon_background_color || '#FF9E67'}"
-                                        >
-                                        <span>${storedPlace.rating} ⭐️ (${storedPlace.user_ratings_total || 0})</span>
-                                    </div>
-                                ` : ''}
-                            </div>
-                        `;
-
-                        // Add photos if available
-                        if (storedPlace.photos && storedPlace.photos.length > 0) {
-                            contentHTML += `
-                                <div class="photos">
-                                    <div class="photo-grid">
-                                        ${storedPlace.photos.map(photo => `
-                                            <img 
-                                                src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${this._googleApiKey}"
-                                                alt="${storedPlace.name}"
-                                                loading="lazy"
-                                            >
-                                        `).join('')}
-                                    </div>
-                                </div>
-                            `;
-                        }
-
-                        contentHTML += '</div>'; // Close content-grid
-
-                        // Update content
-                        detailsDiv.innerHTML = contentHTML;
-                        
-                        // Show the sheet
-                        sheet.classList.add('active');
-                        backdrop.classList.add('active');
-                    });
-
-                    this._placeMarkers.push(marker);
-                }
+                this._placeMarkers.push(marker);
             }
         });
     }
@@ -933,6 +815,31 @@ class MapService {
 
     onPlacesChange(callback) {
         this._placesChangeCallbacks.push(callback);
+    }
+
+    onMarkerClick(callback) {
+        this._markerClickCallbacks.push(callback);
+    }
+
+    onMarkerSelect(callback) {
+        this._markerSelectCallbacks.push(callback);
+    }
+
+    selectMarker(placeId) {
+        this._selectedMarkerId = placeId;
+        this._placeMarkers.forEach(marker => {
+            const markerEl = marker.getElement();
+            if (markerEl) {
+                markerEl.classList.toggle('selected', marker.placeId === placeId);
+            }
+        });
+        
+        // Create and dispatch a new event each time
+        const event = new CustomEvent('markerSelect', {
+            bubbles: true,
+            detail: placeId
+        });
+        this._map.getContainer().dispatchEvent(event);
     }
 }
 
