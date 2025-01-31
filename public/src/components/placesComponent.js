@@ -295,6 +295,42 @@ export default class PlacesComponent {
         }
     }
 
+    _scrollCardIntoView(placeId) {
+        const card = document.querySelector(`.place-card[data-place-id="${placeId}"]`);
+        const scrollContainer = document.querySelector('.places-scroll');
+        if (!card || !scrollContainer) return;
+
+        console.log('🔄 Starting programmatic scroll');
+        
+        this._isProgrammaticScroll = true;
+        this._isTransitioning = true;
+        this._lastScrollTime = Date.now();
+        
+        scrollContainer.scrollTo({
+            behavior: 'smooth',
+            left: card.getBoundingClientRect().left - 16 + scrollContainer.scrollLeft,
+        });
+        
+        const checkScrollEnd = () => {
+            const currentScroll = scrollContainer.scrollLeft;
+            
+            setTimeout(() => {
+                if (currentScroll === scrollContainer.scrollLeft) {
+                    console.log('🔄 Ending programmatic scroll');
+                    this._isProgrammaticScroll = false;
+                    
+                    setTimeout(() => {
+                        this._isTransitioning = false;
+                    }, 500);
+                } else {
+                    checkScrollEnd();
+                }
+            }, 50);
+        };
+        
+        checkScrollEnd();
+    }
+
     _handleMarkerClick(place) {
         if (this._isUpdating) return;
         this._isUpdating = true;
@@ -309,12 +345,7 @@ export default class PlacesComponent {
             card.dataset.selected = (card.dataset.placeId === place.place_id).toString();
         });
 
-        const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
-        if (card) {
-            this._lastScrollTime = Date.now();
-            this._scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
-        }
-
+        this._scrollCardIntoView(place.place_id);
         this._mapService.selectMarker(place.place_id);
 
         // Re-observe after a delay
@@ -421,7 +452,7 @@ export default class PlacesComponent {
                 console.log('🎯 Card clicked:', placeId);
                 this._mapService.selectMarker(placeId);
                 
-                this._scrollIntoViewWithOffset(card, placesScroll, 16);
+                this._scrollCardIntoView(placeId);
                 
                 const place = this._currentPlaces.find(p => p.place_id === placeId);
                 if (place) {
@@ -431,38 +462,6 @@ export default class PlacesComponent {
                 this._isUpdating = false;
             });
         });
-    }
-
-    _scrollIntoViewWithOffset(el, scrollContainer, offset) {
-        console.log('🔄 Starting programmatic scroll');
-        
-        this._isProgrammaticScroll = true;
-        this._isTransitioning = true;
-        this._lastScrollTime = Date.now();
-        
-        scrollContainer.scrollTo({
-            behavior: 'smooth',
-            left: el.getBoundingClientRect().left - offset + scrollContainer.scrollLeft,
-        });
-        
-        const checkScrollEnd = () => {
-            const currentScroll = scrollContainer.scrollLeft;
-            
-            setTimeout(() => {
-                if (currentScroll === scrollContainer.scrollLeft) {
-                    console.log('🔄 Ending programmatic scroll');
-                    this._isProgrammaticScroll = false;
-                    
-                    setTimeout(() => {
-                        this._isTransitioning = false;
-                    }, 500);
-                } else {
-                    checkScrollEnd();
-                }
-            }, 50);
-        };
-        
-        checkScrollEnd();
     }
 
     async _showPlaceDetails(place) {
@@ -512,15 +511,16 @@ export default class PlacesComponent {
                 throw new Error('No details returned');
             }
 
-            // Update selection state
+            // Update selection state and scroll
             document.querySelectorAll('.place-card').forEach(c => {
                 c.dataset.selected = (c === card).toString();
             });
             this._mapService.selectMarker(place.place_id);
+            this._scrollCardIntoView(place.place_id);
 
             // Expand card width with transition
             card.style.transition = 'width 0.2s ease-in-out';
-            card.style.width = '280px';
+            card.style.width = '320px';
             card.style.flexShrink = '0';
             card.dataset.expanded = 'true';
 
