@@ -464,4 +464,21 @@
 
 #map-resize-handle:hover {
     background: #A31344;  /* Even darker on hover */
+}
+
+/* Remove any absolute positioning for .poi-toggle */
+.poi-toggle {
+    position: static !important; /* Override any absolute positioning */
+}
+
+/* If needed, remove any top/right positioning */
+.poi-toggle.absolute {
+    position: static !important;
+}
+
+/* Remove the map-specific positioning if it exists */
+#map .poi-toggle {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
 } 

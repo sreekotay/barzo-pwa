@@ -133,14 +133,12 @@ function updatePlacesContainer(places) {
     const observer = new IntersectionObserver(
         (entries) => {
             if (isProgrammaticScroll || isTransitioning) {
-                console.log('⏭️ Skipping intersection - transition in progress');
                 return;
             }
 
             // Skip if we're within 2000ms of the last scroll start
             const now = Date.now();
             if (now - lastScrollTime < 2000) {
-                console.log('⏭️ Skipping intersection - too soon after scroll:', now - lastScrollTime);
                 return;
             }
 
@@ -148,10 +146,6 @@ function updatePlacesContainer(places) {
             let mostVisibleCard = null;
 
             entries.forEach(entry => {
-                console.log('👁️ Checking intersection:', 
-                    currentPlaces.find(p => p.place_id === entry.target.dataset.placeId)?.name,
-                    'ratio:', entry.intersectionRatio
-                );
                 if (entry.intersectionRatio > maxRatio) {
                     maxRatio = entry.intersectionRatio;
                     mostVisibleCard = entry.target;
@@ -161,7 +155,6 @@ function updatePlacesContainer(places) {
             if (mostVisibleCard && maxRatio > 0.5) {
                 const placeId = mostVisibleCard.dataset.placeId;
                 const place = currentPlaces.find(p => p.place_id === placeId);
-                console.log('✨ Selecting card:', place?.name, 'ratio:', maxRatio);
                 
                 isUpdating = true;
                 document.querySelectorAll('.place-card').forEach(card => {
@@ -238,18 +231,32 @@ function initializeMobileMenu() {
 
 const routes = {
     home: `
-        <div id="places-container" class="pt-4"></div>
-        <h1 class="text-2xl font-bold mb-2 mx-4">Welcome to Barzo</h1>
-        <div class="bg-white rounded-lg shadow mx-4 p-6">
-            <h2 class="text-xl font-semibold mb-4">Latest Updates</h2>
-            <div class="space-y-4">
-                <div class="border-b pb-4">
-                    <h3 class="font-medium">New Feature Released</h3>
-                    <p class="text-gray-600">We've just launched our new messaging system!</p>
+        <div class="pt-4">
+            <div id="places-container"></div>
+            <div class="flex px-4 mb-2">
+                <div class="poi-toggle bg-white rounded-lg shadow">
+                    <div class="flex">
+                        <button class="px-4 py-2 rounded-l-lg bg-red-600 text-white" data-type="venues">
+                            Venues
+                        </button>
+                        <button class="px-4 py-2 rounded-r-lg text-gray-700" data-type="events">
+                            Events
+                        </button>
+                    </div>
                 </div>
-                <div class="border-b pb-4">
-                    <h3 class="font-medium">Community Highlight</h3>
-                    <p class="text-gray-600">Check out this week's most active members.</p>
+            </div>
+            <h1 class="text-2xl font-bold mb-2 mx-4">Welcome to Barzo</h1>
+            <div class="bg-white rounded-lg shadow mx-4 p-6">
+                <h2 class="text-xl font-semibold mb-4">Latest Updates</h2>
+                <div class="space-y-4">
+                    <div class="border-b pb-4">
+                        <h3 class="font-medium">New Feature Released</h3>
+                        <p class="text-gray-600">We've just launched our new messaging system!</p>
+                    </div>
+                    <div class="border-b pb-4">
+                        <h3 class="font-medium">Community Highlight</h3>
+                        <p class="text-gray-600">Check out this week's most active members.</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -322,6 +329,23 @@ function router() {
     // Re-render places if we're on the home route and have places data
     if (path === 'home' && currentPlaces.length > 0) {
         updatePlacesContainer(currentPlaces);
+    }
+
+    // Add toggle handlers
+    const toggleContainer = document.querySelector('.poi-toggle');
+    if (toggleContainer) {
+        toggleContainer.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', () => {
+                currentPOIType = button.dataset.type;
+                updatePOIs();
+                // Update button styles
+                toggleContainer.querySelectorAll('button').forEach(b => {
+                    b.classList.toggle('bg-red-600', b.dataset.type === currentPOIType);
+                    b.classList.toggle('text-white', b.dataset.type === currentPOIType);
+                    b.classList.toggle('text-gray-700', b.dataset.type !== currentPOIType);
+                });
+            });
+        });
     }
 }
 
@@ -494,9 +518,6 @@ export function initialize() {
     });
 
     initMapResize();
-
-    // Add toggle UI
-    addPOIToggle();
 }
 
 export function updateLocation() {
@@ -535,59 +556,6 @@ export function scrollIntoViewWithOffset(el, scrollContainer, offset) {
     checkScrollEnd();
 }
 
-// Add toggle UI
-function addPOIToggle() {
-    const toggleContainer = document.createElement('div');
-    toggleContainer.className = 'poi-toggle absolute top-4 right-4 bg-white rounded-lg shadow z-10';
-    toggleContainer.innerHTML = `
-        <div class="flex">
-            <button class="px-4 py-2 rounded-l-lg ${currentPOIType === 'venues' ? 'bg-red-600 text-white' : 'text-gray-700'}" 
-                    data-type="venues">
-                Venues
-            </button>
-            <button class="px-4 py-2 rounded-r-lg ${currentPOIType === 'events' ? 'bg-red-600 text-white' : 'text-gray-700'}" 
-                    data-type="events">
-                Events
-            </button>
-        </div>
-    `;
-    document.querySelector('#map').appendChild(toggleContainer);
-
-    // Add toggle handlers
-    toggleContainer.querySelectorAll('button').forEach(button => {
-        button.addEventListener('click', () => {
-            currentPOIType = button.dataset.type;
-            updatePOIs();
-            // Update button styles
-            toggleContainer.querySelectorAll('button').forEach(b => {
-                b.classList.toggle('bg-red-600', b.dataset.type === currentPOIType);
-                b.classList.toggle('text-white', b.dataset.type === currentPOIType);
-                b.classList.toggle('text-gray-700', b.dataset.type !== currentPOIType);
-            });
-        });
-    });
-}
-
-// Add function to fetch events from Eventbrite
-async function fetchNearbyEvents(lat, lng) {
-    const response = await fetch(`/api/events?lat=${lat}&lng=${lng}`);
-    const events = await response.json();
-    return events.map(event => ({
-        id: event.id,
-        name: event.name.text,
-        geometry: {
-            location: {
-                lat: event.venue.latitude,
-                lng: event.venue.longitude
-            }
-        },
-        vicinity: event.venue.address.localized_address_display,
-        start: event.start,
-        end: event.end,
-        // ... map other relevant fields
-    }));
-}
-
 // Update POIs based on current type
 async function updatePOIs() {
     const location = locationService.getMapLocation();
@@ -611,4 +579,24 @@ async function updatePOIs() {
             }
         });
     }
+}
+
+// Add function to fetch events from Eventbrite
+async function fetchNearbyEvents(lat, lng) {
+    const response = await fetch(`/api/events?lat=${lat}&lng=${lng}`);
+    const events = await response.json();
+    return events.map(event => ({
+        id: event.id,
+        name: event.name.text,
+        geometry: {
+            location: {
+                lat: event.venue.latitude,
+                lng: event.venue.longitude
+            }
+        },
+        vicinity: event.venue.address.localized_address_display,
+        start: event.start,
+        end: event.end,
+        // ... map other relevant fields
+    }));
 }

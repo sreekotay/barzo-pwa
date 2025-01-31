@@ -33,6 +33,8 @@ class MapService {
      * @param {number} [options.initialZoom=13] - Initial map zoom level
      * @param {number|boolean} [options.nearbyPlaces=false] - Number of nearby places to fetch, or false to disable
      * @param {string} [options.placesEndpoint='supabase'] - Which endpoint to use for places API ('supabase' or 'cloudflare')
+     * @param {Function} [options.onAutocompleteSelect] - Callback function to handle autocomplete selection
+     * @param {Function} [options.onMapDrag] - Callback function to handle map drag
      */
     constructor(locationService, { 
         mapContainer, 
@@ -42,7 +44,9 @@ class MapService {
         searchInputLevel, 
         initialZoom = 13, 
         nearbyPlaces = false,
-        placesEndpoint = 'supabase'
+        placesEndpoint = 'supabase',
+        onAutocompleteSelect,
+        onMapDrag
     }) {
         this._locationService = locationService;
         this._mapContainer = mapContainer;
@@ -84,6 +88,10 @@ class MapService {
         this._markerClickCallbacks = [];
         this._markerSelectCallbacks = [];
         this._selectedMarkerId = null;
+
+        this._onAutocompleteSelect = onAutocompleteSelect;
+        this._onMapDrag = onMapDrag;
+        this._isManualFromAutocomplete = false;  // Add new flag
     }
 
     /**
@@ -195,7 +203,8 @@ class MapService {
             async (location) => {
                 await this._reverseGeocode(location);
                 // Update search input if it exists
-                if (this._searchInput && this._currentPlace) {
+                if (this._searchInput && this._currentPlace && 
+                    (!this._isManualFromAutocomplete || !this._locationService._isManualMap)) {
                     const searchInput = document.querySelector('.google-places-input');
                     if (searchInput) {
                         searchInput.value = this._getSearchDisplayText(this._currentPlace);
@@ -243,13 +252,22 @@ class MapService {
             }
         });
 
-        // Update location service and fetch new places only when movement ends
+        // Update location service and handle manual drag
         this._map.on('moveend', () => {
             const center = this._map.getCenter();
             const location = {
                 lng: center.lng,
                 lat: center.lat
             };
+
+            // Check if this was a user drag (not programmatic)
+            if (this._map.dragPan.isActive()) {
+                this._isManualFromAutocomplete = false;  // Clear the flag on manual drag
+                if (this._onMapDrag) {
+                    this._onMapDrag();
+                }
+            }
+
             this._locationService.setMapLocation(location);
         });
 
@@ -339,6 +357,14 @@ class MapService {
                 lat: place.geometry.location.lat()
             };
 
+            // Set both flags when selecting from autocomplete
+            this._isManualFromAutocomplete = true;
+            this._locationService._isManualMap = true;  // Set manual map mode
+
+            if (this._onAutocompleteSelect) {
+                this._onAutocompleteSelect();
+            }
+
             // Update map marker and view
             this._mapMarker.setLngLat([location.lng, location.lat]).addTo(this._map);
             this._map.flyTo({
@@ -346,11 +372,15 @@ class MapService {
                 zoom: this._initialZoom
             });
 
-            // Store place data in similar format to Mapbox
+            // Store place data and update location service
             this._currentPlace = this._convertGooglePlace(place);
-
-            // Update LocationService
             this._locationService.setMapLocation(location);
+        });
+
+        // Update the dragstart handler to clear both flags
+        this._map.on('dragstart', () => {
+            this._isManualFromAutocomplete = false;
+            // Don't clear _isManualMap here as we want to stay in manual mode when dragging
         });
 
         // Clear button functionality
@@ -518,6 +548,12 @@ class MapService {
      * @private
      */
     async _reverseGeocode(location) {
+        // Skip reverse geocoding if manual from autocomplete AND in manual mode
+        if (this._isManualFromAutocomplete && this._locationService._isManualMap) {
+            return;
+        }
+
+        // Proceed with normal reverse geocoding
         if (this._googleApiKey) {
             await this._reverseGeocodeGoogle(location);
         } else {
