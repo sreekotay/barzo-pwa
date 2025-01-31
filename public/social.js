@@ -188,6 +188,9 @@ function updatePlacesContainer(places) {
             const placeId = card.dataset.placeId;
             mapService.selectMarker(placeId);
             
+            // Add scroll into view
+            scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
+            
             // Show bottom sheet
             const place = currentPlaces.find(p => p.place_id === placeId);
             if (place) {
@@ -449,6 +452,20 @@ function showPlaceDetails(place) {
     
     // Build the content HTML
     let contentHTML = `
+            ${place.photos && place.photos.length > 0 ? `
+            <div class="photos">
+                <div class="photo-grid">
+                    ${place.photos.map(photo => `
+                        <img 
+                            src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${mapService._googleApiKey}"
+                            alt="${place.name}"
+                            loading="lazy"
+                        >
+                    `).join('')}
+                </div>
+            </div>
+        ` : ''}
+
         <div class="content-grid">
             <div class="main-info">
                 <div class="place-type">${formattedTypes}</div>
@@ -475,20 +492,6 @@ function showPlaceDetails(place) {
                 </div>
             ` : ''}
         </div>
-
-        ${place.photos && place.photos.length > 0 ? `
-            <div class="photos">
-                <div class="photo-grid">
-                    ${place.photos.map(photo => `
-                        <img 
-                            src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${mapService._googleApiKey}"
-                            alt="${place.name}"
-                            loading="lazy"
-                        >
-                    `).join('')}
-                </div>
-            </div>
-        ` : ''}
     `;
 
     // Update content and show the sheet

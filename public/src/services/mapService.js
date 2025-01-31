@@ -336,7 +336,7 @@ class MapService {
         
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Search places...';
+        searchInput.placeholder = 'Where do you want to go?';
         searchInput.className = 'google-places-input';
         
         const searchContainer = document.getElementById(this._searchInput);
@@ -670,10 +670,18 @@ class MapService {
                 marker.placeData = place;
 
                 // Simplified click handler - just select marker
-                el.addEventListener('click', () => {
+                el.addEventListener('click', (e) => {
+                    e.preventDefault(); // Prevent any default handling
                     this.selectMarker(place.place_id);
                     this._markerClickCallbacks.forEach(callback => callback(place));
                 });
+
+                // Add touch handlers
+                el.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); // Prevent map pan/zoom
+                    this.selectMarker(place.place_id);
+                    this._markerClickCallbacks.forEach(callback => callback(place));
+                }, { passive: false });
 
                 this._placeMarkers.push(marker);
             }
@@ -723,7 +731,7 @@ class MapService {
         }
         
         try {
-            const radius = this._calculateRadius() / 2;
+            const radius = this._calculateRadius() * 2 / 3;
             console.log('Fetching places for location:', location, 'radius:', radius);
             
             let endpoint, requestBody;
@@ -904,10 +912,18 @@ class MapService {
                 marker.poiId = poi.id;
                 marker.poiData = poi;
 
-                el.addEventListener('click', () => {
+                // Inside addPOIMarkers method, update the event handling
+                el.addEventListener('click', (e) => {
+                    e.preventDefault();
                     this.selectMarker(poi.id);
                     this._markerClickCallbacks.forEach(callback => callback(poi));
                 });
+
+                el.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    this.selectMarker(poi.id);
+                    this._markerClickCallbacks.forEach(callback => callback(poi));
+                }, { passive: false });
 
                 this._placeMarkers.push(marker);
             }
