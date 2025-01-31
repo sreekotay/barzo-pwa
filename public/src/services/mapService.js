@@ -196,7 +196,7 @@ class MapService {
                 await this._reverseGeocode(location);
                 // Update search input if it exists
                 if (this._searchInput && this._currentPlace) {
-                    const searchInput = document.querySelector('.mapboxgl-ctrl-geocoder input');
+                    const searchInput = document.querySelector('.google-places-input');
                     if (searchInput) {
                         searchInput.value = this._getSearchDisplayText(this._currentPlace);
                     }
@@ -231,7 +231,9 @@ class MapService {
             this._updateMapMarker(cachedLocation);
             // Set initial map location in service
             this._locationService.setMapLocation(cachedLocation);
+            this._isManualMap = false; // this is KEY - but this block is bogus
         }
+        /**/
 
         // Update marker position during movement - only for the map marker
         this._map.on('move', () => {
