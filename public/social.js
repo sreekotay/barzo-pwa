@@ -22,14 +22,9 @@ let currentPlaces = [];
 // Add at the top with other state variables
 let currentIntersectionObserver = null;
 let isUpdating = false;
-let lastScrollTime = 0;
 
 // Add state for current POI type
 let currentPOIType = 'venues'; // or 'events'
-
-// Add state for tracking programmatic scrolls
-let isProgrammaticScroll = false;
-let isTransitioning = false;
 
 // Update places change callback to store data
 mapService.onPlacesChange((places) => {
@@ -53,7 +48,6 @@ mapService.onMarkerClick((place) => {
 
     const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
     if (card) {
-        lastScrollTime = Date.now();
         placesComponent.scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
     }
 
@@ -377,7 +371,32 @@ function showPlaceDetails(place) {
     backdrop.classList.add('active');
 }
 
-// Call initializeBottomSheet in the initialize function
+// Update POIs based on current type
+async function updatePOIs() {
+    const location = locationService.getMapLocation();
+    if (!location) return;
+
+    if (currentPOIType === 'venues') {
+        const venues = await fetchNearbyVenues(location.lat, location.lng);
+        mapService.addPOIMarkers(venues, {
+            markerClass: 'venue-marker',
+            getMarkerColor: venue => venue.opening_hours?.open_now ? '#E31C5F' : '#666666'
+        });
+    } else {
+        const events = await fetchNearbyEvents(location.lat, location.lng);
+        mapService.addPOIMarkers(events, {
+            markerClass: 'event-marker',
+            getMarkerColor: event => {
+                const now = new Date();
+                const start = new Date(event.start.local);
+                const end = new Date(event.end.local);
+                return now >= start && now <= end ? '#4CAF50' : '#FFC107';
+            }
+        });
+    }
+}
+
+// Update the initialize function to remove scroll-related initialization
 export function initialize() {
     locationService.requestGeoLocation();
     const { closeMenu } = initializeMobileMenu();
@@ -402,61 +421,4 @@ export function initialize() {
 
 export function updateLocation() {
     return locationService.getUserLocation();
-} 
-
-export function scrollIntoViewWithOffset(el, scrollContainer, offset) {
-    console.log('🔄 Starting programmatic scroll');
-    
-    isProgrammaticScroll = true;
-    isTransitioning = true;
-    lastScrollTime = Date.now();
-    
-    scrollContainer.scrollTo({
-        behavior: 'smooth',
-        left: el.getBoundingClientRect().left - offset + scrollContainer.scrollLeft,
-    });
-    
-    const checkScrollEnd = () => {
-        const currentScroll = scrollContainer.scrollLeft;
-        
-        setTimeout(() => {
-            if (currentScroll === scrollContainer.scrollLeft) {
-                console.log('🔄 Ending programmatic scroll');
-                isProgrammaticScroll = false;
-                
-                setTimeout(() => {
-                    isTransitioning = false;
-                }, 500);
-            } else {
-                checkScrollEnd();
-            }
-        }, 50);
-    };
-    
-    checkScrollEnd();
-}
-
-// Update POIs based on current type
-async function updatePOIs() {
-    const location = locationService.getMapLocation();
-    if (!location) return;
-
-    if (currentPOIType === 'venues') {
-        const venues = await fetchNearbyVenues(location.lat, location.lng);
-        mapService.addPOIMarkers(venues, {
-            markerClass: 'venue-marker',
-            getMarkerColor: venue => venue.opening_hours?.open_now ? '#E31C5F' : '#666666'
-        });
-    } else {
-        const events = await fetchNearbyEvents(location.lat, location.lng);
-        mapService.addPOIMarkers(events, {
-            markerClass: 'event-marker',
-            getMarkerColor: event => {
-                const now = new Date();
-                const start = new Date(event.start.local);
-                const end = new Date(event.end.local);
-                return now >= start && now <= end ? '#4CAF50' : '#FFC107';
-            }
-        });
-    }
 }

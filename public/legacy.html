@@ -78,8 +78,11 @@
 
         async function getUserInfo() {
             //const userInfo = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}`);
-            const userInfo = await apiCall('POST', `/v1/users/all`, {page:1, limit:300});
+            //const userInfo = await apiCall('POST', `/v1/users/all`, {page:1, limit:300});
             //const userInfo = await apiCall('POST', `/v1/venues/all`, {page:1, limit:300});
+            //const userInfo = await apiCall('GET', `v1/feeds/fyp?latitude=27.964157&longitude=-82.452606&radiusInFeet=30000&userId=${globalAuthToken.token.identity.userId}`);
+            //const userInfo = await apiCall('GET', `v1/feeds/places/events?latitude=27.964157&longitude=-82.452606&radiusInFeet=300000&userId=${globalAuthToken.token.identity.userId}`);
+            const userInfo = await apiCall('POST', `v1/events/all`, {});
             console.log(JSON.stringify(userInfo, null, 2));
             return userInfo;
         }
@@ -113,7 +116,9 @@
                 authInfoEl.classList.remove('hidden');
                 authDataEl.textContent = JSON.stringify(globalAuthToken, null, 2);
 
-                getUserInfo();
+                const redirect = getQueryParam('redirect');
+                if (redirect) window.location.href = decodeURIComponent(redirect)
+                else getUserInfo();
             } catch (error) {
                 loadingEl.innerHTML = `<p class="text-red-500">Error parsing auth token: ${error.message}</p>`;
             }

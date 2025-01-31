@@ -671,7 +671,8 @@ class MapService {
                 el.style.width = '16px';
                 el.style.height = '16px';
                 el.style.borderRadius = '50%';
-                el.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#666666';
+                // Change the closed color to a lighter gray
+                el.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#9CA3AF';
                 el.style.border = '2px solid white';
                 el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
                 el.style.cursor = 'pointer';
@@ -774,7 +775,7 @@ class MapService {
                     latitude: location.lat,
                     longitude: location.lng,
                     radius: radius,
-                    types: ['bar']
+                    types: ['restaurant', 'cafe', 'bar'],
                 };
             }
             

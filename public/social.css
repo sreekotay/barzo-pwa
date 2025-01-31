@@ -239,7 +239,7 @@
 .place-card {
     flex: 0 0 auto;
     width: 240px;
-    min-width: 240px;
+    min-width: 280px;
     background: white;
     padding: 0;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);

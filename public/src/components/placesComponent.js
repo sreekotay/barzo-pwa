@@ -477,28 +477,32 @@ export default class PlacesComponent {
 
         // Toggle expanded state
         const wasExpanded = card.dataset.expanded === 'true';
+        
+        // Always unexpand all cards first
+        document.querySelectorAll('.place-card').forEach(c => {
+            c.dataset.expanded = 'false';
+            c.dataset.selected = 'false';  // Unselect all cards
+            c.style.transition = 'width 0.2s ease-in-out';
+            c.style.width = '240px';
+            c.style.flexShrink = '1';
+            
+            const detailsDiv = c.querySelector('.place-details');
+            if (detailsDiv) {
+                detailsDiv.style.opacity = '0';
+                detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
+                setTimeout(() => {
+                    detailsDiv.remove();
+                }, 200);
+            }
+        });
+
+        // If the card was expanded, we're done - just unselect the marker
         if (wasExpanded) {
-            // Always unexpand all cards when clicking an expanded card
-            document.querySelectorAll('.place-card').forEach(c => {
-                c.dataset.expanded = 'false';
-                c.dataset.selected = 'false';  // Unselect all cards
-                c.style.transition = 'width 0.2s ease-in-out';
-                c.style.width = '240px';
-                c.style.flexShrink = '1';
-                
-                const detailsDiv = c.querySelector('.place-details');
-                if (detailsDiv) {
-                    detailsDiv.style.opacity = '0';
-                    detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
-                    setTimeout(() => {
-                        detailsDiv.remove();
-                    }, 200);
-                }
-            });
-            this._mapService.selectMarker(null);  // Unselect marker
+            this._mapService.selectMarker(null);
             return;
         }
 
+        // Continue with expanding the clicked card...
         try {
             // Fetch additional place details using Supabase function
             const response = await fetch('https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search', {
