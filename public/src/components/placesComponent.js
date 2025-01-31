@@ -496,14 +496,18 @@ export default class PlacesComponent {
             }
         });
 
-        // If the card was expanded, we're done - just unselect the marker
+        // If the card was expanded, we're done - just unselect the marker and return
         if (wasExpanded) {
             this._mapService.selectMarker(null);
             return;
         }
 
-        // Continue with expanding the clicked card...
+        // If we get here, we're expanding a new card
         try {
+            // Select this card and marker
+            card.dataset.selected = 'true';
+            this._mapService.selectMarker(place.place_id);
+            
             // Fetch additional place details using Supabase function
             const response = await fetch('https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search', {
                 method: 'POST',
@@ -521,13 +525,6 @@ export default class PlacesComponent {
             if (!details) {
                 throw new Error('No details returned');
             }
-
-            // Update selection state and scroll
-            document.querySelectorAll('.place-card').forEach(c => {
-                c.dataset.selected = (c === card).toString();
-            });
-            this._mapService.selectMarker(place.place_id);
-            this._scrollCardIntoView(place.place_id);
 
             // Expand card width with transition
             card.style.transition = 'width 0.2s ease-in-out';

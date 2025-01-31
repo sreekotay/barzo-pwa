@@ -47,8 +47,9 @@ mapService.onMarkerClick((place) => {
     });
 
     const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
-    if (card) {
-        placesComponent.scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
+    if (card && window.placesComponent) {
+        // Use the proper method from placesComponent
+        window.placesComponent._scrollCardIntoView(place.place_id);
     }
 
     mapService.selectMarker(place.place_id);
