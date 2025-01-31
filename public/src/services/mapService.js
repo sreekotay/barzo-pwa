@@ -52,7 +52,7 @@ class MapService {
         this._mapContainer = mapContainer;
         this._accessToken = accessToken;
         this._googleApiKey = googleApiKey;
-        this._searchInput = searchInput;
+        this._searchInputSelector = searchInput;
         this._searchInputLevel = searchInputLevel;
         this._initialZoom = initialZoom;
         this._nearbyPlaces = nearbyPlaces;
@@ -202,9 +202,9 @@ class MapService {
         this._locationService.onMapLocationChange(
             async (location) => {
                 await this._reverseGeocode(location);
-                if (this._searchInput && this._currentPlace && 
+                if (this._searchInputSelector && this._currentPlace && 
                     (!this._isManualFromAutocomplete || !this._locationService.isManualMode())) {
-                    const searchInput = document.querySelector('.google-places-input');
+                    const searchInput = document.querySelector(this._searchInputSelector + ' .google-places-input');
                     if (searchInput) {
                         searchInput.value = this._getSearchDisplayText(this._currentPlace);
                     }
@@ -271,7 +271,7 @@ class MapService {
         });
 
         // Initialize search if requested
-        if (this._searchInput) {
+        if (this._searchInputSelector) {
             await this._initializeSearch();
         }
     }
@@ -298,7 +298,7 @@ class MapService {
         });
 
         // Load Geocoder if search is enabled
-        if (this._searchInput) {
+        if (this._searchInputSelector) {
             await new Promise((resolve, reject) => {
                 const script = document.createElement('script');
                 script.src = 'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js';
@@ -338,7 +338,7 @@ class MapService {
         searchInput.placeholder = 'Search places...';
         searchInput.className = 'google-places-input';
         
-        const searchContainer = document.getElementById(this._searchInput);
+        const searchContainer = document.querySelector(this._searchInputSelector);
         searchContainer.appendChild(searchInput);
 
         const autocomplete = new google.maps.places.Autocomplete(searchInput, {
@@ -547,16 +547,24 @@ class MapService {
      * @private
      */
     async _reverseGeocode(location) {
-        // Use proper method to check manual mode
         if (this._isManualFromAutocomplete && this._locationService.isManualMode()) {
             return;
         }
 
-        // Proceed with normal reverse geocoding
-        if (this._googleApiKey) {
-            await this._reverseGeocodeGoogle(location);
-        } else {
-            await this._reverseGeocodeMapbox(location);
+        try {
+            if (this._googleApiKey) {
+                await this._reverseGeocodeGoogle(location);
+            } else {
+                await this._reverseGeocodeMapbox(location);
+            }
+
+            // Update search text using the helper method
+            if (this._currentPlace) {
+                this._updateSearchText(this._getSearchDisplayText(this._currentPlace));
+            }
+        } catch (error) {
+            console.warn('Reverse geocoding failed:', error);
+            this._currentPlace = null;
         }
     }
 
@@ -925,7 +933,7 @@ class MapService {
     }
 
     updateSearchText(text) {
-        const searchInput = document.querySelector(this._searchInputSelector);
+        const searchInput = document.querySelector(this._searchInputSelector + ' .google-places-input');
         // Only update if the input doesn't have focus
         if (searchInput && !document.activeElement.isSameNode(searchInput)) {
             searchInput.value = text;
