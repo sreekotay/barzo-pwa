@@ -92,10 +92,6 @@ class MapService {
         this._onAutocompleteSelect = onAutocompleteSelect;
         this._onMapDrag = onMapDrag;
         this._isManualFromAutocomplete = false;  // Add new flag
-
-        // Add threshold for location change (about 10 meters)
-        this._locationChangeThreshold = 0.00009;
-        this._lastProcessedLocation = null;
     }
 
     /**
@@ -551,19 +547,10 @@ class MapService {
      * @private
      */
     async _reverseGeocode(location) {
-        // Check if location has materially changed
-        if (!this._hasLocationMateriallyChanged(location)) {
-            console.log('Location has not materially changed, skipping reverse geocode');
-            return;
-        }
-
         // Use proper method to check manual mode
         if (this._isManualFromAutocomplete && this._locationService.isManualMode()) {
             return;
         }
-
-        // Store this location as last processed
-        this._lastProcessedLocation = { ...location };
 
         // Proceed with normal reverse geocoding
         if (this._googleApiKey) {
@@ -741,17 +728,8 @@ class MapService {
             console.log('Nearby places disabled');
             return;
         }
-
-        // Check if location has materially changed
-        if (!this._hasLocationMateriallyChanged(location)) {
-            console.log('Location has not materially changed, skipping update');
-            return;
-        }
         
         try {
-            // Store this location as last processed
-            this._lastProcessedLocation = { ...location };
-            
             const radius = this._calculateRadius();
             console.log('Fetching places for location:', location, 'radius:', radius);
             
@@ -952,17 +930,6 @@ class MapService {
         if (searchInput && !document.activeElement.isSameNode(searchInput)) {
             searchInput.value = text;
         }
-    }
-
-    // Add helper method to check if location has materially changed
-    _hasLocationMateriallyChanged(newLocation) {
-        if (!this._lastProcessedLocation) return true;
-        
-        const latDiff = Math.abs(newLocation.lat - this._lastProcessedLocation.lat);
-        const lngDiff = Math.abs(newLocation.lng - this._lastProcessedLocation.lng);
-        
-        return latDiff > this._locationChangeThreshold || 
-               lngDiff > this._locationChangeThreshold;
     }
 }
 

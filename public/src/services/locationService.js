@@ -125,6 +125,9 @@ class LocationService {
         this._mapLocationCallbacks = [];
         /** @type {Array<{callback: Function, debounceMs: number, timeoutId: number|null}>} */
         this._userLocationCallbacks = [];
+
+        // Add threshold for considering location changes as "material"
+        this._distanceThresholdMeters = 1; // 1 meter threshold
     }
 
     /**
@@ -215,23 +218,26 @@ class LocationService {
     }
 
     setMapLocation(location) {
-        if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
-            throw new Error('Invalid location format. Expected {lat: number, lng: number}');
+        if (!this._isLocationChangeMaterial(this._mapLocation, location)) {
+            return; // Skip if change is not material
         }
 
-        this._isManualMap = true;
         this._mapLocation = location;
-
-        // Trigger debounced callbacks
+        this._isManualMap = true;
+        
+        // Notify subscribers - fix the callback structure
         this._mapLocationCallbacks.forEach(callbackObj => {
-            if (callbackObj.timeoutId) {
-                clearTimeout(callbackObj.timeoutId);
-            }
-
-            callbackObj.timeoutId = setTimeout(() => {
+            if (callbackObj.realtime) {
                 callbackObj.callback(location);
-                callbackObj.timeoutId = null;
-            }, callbackObj.debounceMs);
+            } else {
+                if (callbackObj.timeoutId) {
+                    clearTimeout(callbackObj.timeoutId);
+                }
+                callbackObj.timeoutId = setTimeout(() => {
+                    callbackObj.callback(location);
+                    callbackObj.timeoutId = null;
+                }, callbackObj.debounceMs);
+            }
         });
     }
 
@@ -612,6 +618,54 @@ class LocationService {
 
     isManualMode() {
         return this._isManualMap;
+    }
+
+    // Add helper method to calculate distance between coordinates
+    _calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2-lat1) * Math.PI/180;
+        const Δλ = (lon2-lon1) * Math.PI/180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c; // Distance in meters
+    }
+
+    // Add method to check if location change is material
+    _isLocationChangeMaterial(oldLocation, newLocation) {
+        if (!oldLocation || !newLocation) return true;
+        
+        const distance = this._calculateDistance(
+            oldLocation.lat,
+            oldLocation.lng,
+            newLocation.lat,
+            newLocation.lng
+        );
+        
+        return distance >= this._distanceThresholdMeters;
+    }
+
+    // Update setUserLocation to check for material changes
+    setUserLocation(location) {
+        if (!this._isLocationChangeMaterial(this._userLocation, location)) {
+            return; // Skip if change is not material
+        }
+
+        this._userLocation = location;
+        localStorage.setItem('userLocation', JSON.stringify(location));
+        
+        // Notify subscribers
+        this._userLocationCallbacks.forEach(callback => callback(location));
+        
+        // Update map location if not in manual mode
+        if (!this._isManualMap) {
+            this.setMapLocation(location);
+        }
     }
 }
 
