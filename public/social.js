@@ -87,60 +87,143 @@ function updatePlacesContainer(places) {
         return;
     }
 
-    // First update the content
-    placesContainer.innerHTML = `
-        <div class="places-scroll pb-2">
-            <div class="w-1" style="flex-shrink: 0;"></div>
-            ${places.map(place => `
-                <div class="place-card" data-place-id="${place.place_id}">
-                    ${place.photos && place.photos.length > 0 ? `
-                        <div class="place-image">
-                            <img 
-                                src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${mapService._googleApiKey}"
-                                alt="${place.name}"
-                                loading="lazy"
-                            >
-                        </div>
-                    ` : ''}
-                    <div class="flex-1 px-2 pb-2">
-                        <div class="types-scroll nowrap">
-                            ${(place.types || [])
-                                .filter(type => !['point_of_interest', 'establishment'].includes(type))
-                                .map((type, index, array) => `
-                                    <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>${index < array.length - 1 ? '<span class="text-gray-300"> | </span>' : ''}
-                                `).join('')}
-                        </div>
-                        <h3 class="name">${place.name}</h3>
-                        <div class="flex" style="align-items: baseline;">
-                            <div class="status ${place.opening_hours?.open_now ? 'open' : 'closed'}">
-                                ${place.opening_hours?.open_now ? 'OPEN' : 'CLOSED'}
-                            </div>
-                            <div class="flex-1"></div>
-                            <div class="text-gray-500 text-xs pr-1">${place.formattedDistance}</div>
-                        </div>
-                    </div>
-                </div>
-            `).join('')}
+    console.log('📍 Updating places container with', places.length, 'places');
+
+    let placesScroll = placesContainer.querySelector('.places-scroll');
+    if (!placesScroll) {
+        console.log('📍 Creating new places-scroll container');
+        placesScroll = document.createElement('div');
+        placesScroll.className = 'places-scroll pb-2';
+        placesScroll.innerHTML = '<div class="w-1" style="flex-shrink: 0;"></div>';
+        placesContainer.innerHTML = '';
+        placesContainer.appendChild(placesScroll);
+    }
+
+    // Get existing cards and create a map of placeId -> card
+    const existingCards = new Map();
+    placesScroll.querySelectorAll('.place-card').forEach(card => {
+        existingCards.set(card.dataset.placeId, card);
+    });
+    console.log('📍 Found', existingCards.size, 'existing cards');
+
+    // Update or create cards
+    places.forEach(place => {
+        let card = existingCards.get(place.place_id);
+        if (card) {
+            console.log('📍 Updating existing card for', place.name);
+            updatePlaceCard(card, place);
+            existingCards.delete(place.place_id);
+        } else {
+            console.log('📍 Creating new card for', place.name);
+            card = createPlaceCard(place);
+            placesScroll.appendChild(card);
+        }
+    });
+
+    // Remove any cards that weren't reused
+    existingCards.forEach(card => {
+        console.log('📍 Removing unused card', card.dataset.placeId);
+        card.remove();
+    });
+
+    // Update observers and event handlers
+    setupCardObserversAndHandlers(placesScroll);
+}
+
+function createPlaceCard(place) {
+    const card = document.createElement('div');
+    card.className = 'place-card';
+    card.dataset.placeId = place.place_id;
+    
+    // Create the basic structure
+    card.innerHTML = `
+        ${place.photos && place.photos.length > 0 ? `
+            <div class="place-image">
+                <img 
+                    src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${mapService._googleApiKey}"
+                    alt="${place.name}"
+                    loading="lazy"
+                >
+            </div>
+        ` : ''}
+        <div class="flex-1 px-2 pb-2">
+            <div class="types-scroll nowrap"></div>
+            <h3 class="name"></h3>
+            <div class="flex" style="align-items: baseline;">
+                <div class="status"></div>
+                <div class="flex-1"></div>
+                <div class="text-gray-500 text-xs pr-1"></div>
+            </div>
         </div>
     `;
 
+    // Update the content
+    updatePlaceCard(card, place);
+    return card;
+}
+
+function updatePlaceCard(card, place) {
+    // Update photo if it exists
+    const existingImage = card.querySelector('.place-image img');
+    if (place.photos && place.photos.length > 0) {
+        const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${mapService._googleApiKey}`;
+        if (existingImage) {
+            if (existingImage.src !== photoUrl) {
+                existingImage.src = photoUrl;
+            }
+        } else {
+            const imageDiv = document.createElement('div');
+            imageDiv.className = 'place-image';
+            imageDiv.innerHTML = `<img src="${photoUrl}" alt="${place.name}" loading="lazy">`;
+            card.insertBefore(imageDiv, card.firstChild);
+        }
+    } else if (existingImage) {
+        existingImage.parentElement.remove();
+    }
+
+    // Update types
+    const typesDiv = card.querySelector('.types-scroll');
+    const types = (place.types || [])
+        .filter(type => !['point_of_interest', 'establishment'].includes(type))
+        .map((type, index, array) => `
+            <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>${index < array.length - 1 ? '<span class="text-gray-300"> | </span>' : ''}
+        `).join('');
+    if (typesDiv) {
+        typesDiv.innerHTML = types;
+    }
+
+    // Update name
+    const nameEl = card.querySelector('.name');
+    if (nameEl) {
+        nameEl.textContent = place.name;
+    }
+
+    // Update status
+    const statusEl = card.querySelector('.status');
+    if (statusEl) {
+        statusEl.className = `status ${place.opening_hours?.open_now ? 'open' : 'closed'}`;
+        statusEl.textContent = place.opening_hours?.open_now ? 'OPEN' : 'CLOSED';
+    }
+
+    // Update distance
+    const distanceEl = card.querySelector('.text-gray-500.text-xs.pr-1');
+    if (distanceEl) {
+        distanceEl.textContent = place.formattedDistance;
+    }
+}
+
+function setupCardObserversAndHandlers(placesScroll) {
     // Cleanup any existing observer
     if (currentIntersectionObserver) {
         currentIntersectionObserver.disconnect();
     }
 
-    // Update the intersection observer to check both flags
+    // Create new observer
     const observer = new IntersectionObserver(
         (entries) => {
-            if (isProgrammaticScroll || isTransitioning) {
-                return;
-            }
-
-            // Skip if we're within 2000ms of the last scroll start
+            if (isProgrammaticScroll || isTransitioning) return;
             const now = Date.now();
-            if (now - lastScrollTime < 2000) {
-                return;
-            }
+            if (now - lastScrollTime < 2000) return;
 
             let maxRatio = 0;
             let mostVisibleCard = null;
@@ -154,7 +237,7 @@ function updatePlacesContainer(places) {
 
             if (mostVisibleCard && maxRatio > 0.5) {
                 const placeId = mostVisibleCard.dataset.placeId;
-                const place = currentPlaces.find(p => p.place_id === placeId);
+                console.log('👁️ Observer selecting:', placeId);
                 
                 isUpdating = true;
                 document.querySelectorAll('.place-card').forEach(card => {
@@ -165,33 +248,26 @@ function updatePlacesContainer(places) {
             }
         },
         {
-            root: document.querySelector('.places-scroll'),
+            root: placesScroll,
             threshold: [0, 0.25, 0.5, 0.75, 1],
             rootMargin: '-10% 0px -10% 0px'
         }
     );
 
-    // Observe all place cards
-    placesContainer.querySelectorAll('.place-card').forEach(card => {
+    // Add click handlers and observe cards
+    placesScroll.querySelectorAll('.place-card').forEach(card => {
         observer.observe(card);
-    });
-
-    // Store observer for cleanup
-    currentIntersectionObserver = observer;
-
-    // Update card click handler to handle marker selection and show details
-    placesContainer.querySelectorAll('.place-card').forEach(card => {
+        
         card.addEventListener('click', () => {
             if (isUpdating) return;
             isUpdating = true;
             
             const placeId = card.dataset.placeId;
+            console.log('🎯 Card clicked:', placeId);
             mapService.selectMarker(placeId);
             
-            // Add scroll into view
-            scrollIntoViewWithOffset(card, document.querySelector('.places-scroll'), 16);
+            scrollIntoViewWithOffset(card, placesScroll, 16);
             
-            // Show bottom sheet
             const place = currentPlaces.find(p => p.place_id === placeId);
             if (place) {
                 showPlaceDetails(place);
@@ -200,6 +276,8 @@ function updatePlacesContainer(places) {
             isUpdating = false;
         });
     });
+
+    currentIntersectionObserver = observer;
 }
 
 // Private functions
@@ -365,7 +443,7 @@ function initMapResize() {
             if (mapService._map) {
                 mapService._map.resize();
             }
-        }, 16); // roughly one frame at 60fps
+        }, 0); // roughly one frame at 60fps
     }
 
     // Mouse events

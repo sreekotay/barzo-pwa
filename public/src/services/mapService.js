@@ -647,8 +647,8 @@ class MapService {
                 // Create marker element
                 const el = document.createElement('div');
                 el.className = `place-marker${index === 2 ? ' selected' : ''}`;
-                el.style.width = '12px';
-                el.style.height = '12px';
+                el.style.width = '16px';
+                el.style.height = '16px';
                 el.style.borderRadius = '50%';
                 el.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#666666';
                 el.style.border = '2px solid white';
@@ -672,6 +672,7 @@ class MapService {
                 // Simplified click handler - just select marker
                 el.addEventListener('click', (e) => {
                     e.preventDefault(); // Prevent any default handling
+                    console.log('🗺️ Marker clicked:', place.name, '(', place.place_id, ')');
                     this.selectMarker(place.place_id);
                     this._markerClickCallbacks.forEach(callback => callback(place));
                 });
@@ -679,6 +680,7 @@ class MapService {
                 // Add touch handlers
                 el.addEventListener('touchstart', (e) => {
                     e.preventDefault(); // Prevent map pan/zoom
+                    console.log('🗺️ Marker touched:', place.name, '(', place.place_id, ')');
                     this.selectMarker(place.place_id);
                     this._markerClickCallbacks.forEach(callback => callback(place));
                 }, { passive: false });
@@ -890,8 +892,8 @@ class MapService {
                 // Create marker element with optional type-specific styling
                 const el = document.createElement('div');
                 el.className = `poi-marker ${options.markerClass || ''} ${index === 2 ? 'selected' : ''}`;
-                el.style.width = '12px';
-                el.style.height = '12px';
+                el.style.width = '16px';
+                el.style.height = '16px';
                 el.style.borderRadius = '50%';
                 el.style.backgroundColor = options.getMarkerColor?.(poi) || '#666666';
                 el.style.border = '2px solid white';
@@ -915,12 +917,14 @@ class MapService {
                 // Inside addPOIMarkers method, update the event handling
                 el.addEventListener('click', (e) => {
                     e.preventDefault();
+                    console.log('🗺️ POI marker clicked:', poi.name, '(', poi.id, ')');
                     this.selectMarker(poi.id);
                     this._markerClickCallbacks.forEach(callback => callback(poi));
                 });
 
                 el.addEventListener('touchstart', (e) => {
                     e.preventDefault();
+                    console.log('🗺️ POI marker touched:', poi.name, '(', poi.id, ')');
                     this.selectMarker(poi.id);
                     this._markerClickCallbacks.forEach(callback => callback(poi));
                 }, { passive: false });
