@@ -395,8 +395,8 @@ class LocationService {
                         lng: position.coords.longitude
                     };
                     
-                    // Only update if location has changed materially
-                    if (this._isLocationChangeMaterial(this._userLocation, newLocation)) {
+                    // Only update if location has changed significantly (more than 10 meters)
+                    if (this._hasLocationChangedSignificantly(newLocation, this._userLocation)) {
                         this._userLocation = newLocation;
                         this._userLocationCached = newLocation;
                         this._userLocationCachedTS = Date.now();
@@ -416,7 +416,7 @@ class LocationService {
                 },
                 {
                     enableHighAccuracy: true,
-                    timeout: 20000,
+                    timeout: 20000,  // Increased from 10000 to 20000 ms
                     maximumAge: 0
                 }
             );
