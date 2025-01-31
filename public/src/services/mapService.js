@@ -895,66 +895,113 @@ class MapService {
             }
         });
         
-        // Create and dispatch a new event each time
-        const event = new CustomEvent('markerSelect', {
-            bubbles: true,
-            detail: placeId
-        });
-        this._map.getContainer().dispatchEvent(event);
+        // Only dispatch event if there's a selected marker
+        if (placeId) {
+            const event = new CustomEvent('markerSelect', {
+                bubbles: true,
+                detail: placeId
+            });
+            this._map.getContainer().dispatchEvent(event);
+        }
     }
 
     // Replace _fetchNearbyPlaces with a generic method to add POI markers
     addPOIMarkers(pois, options = {}) {
-        // Clear existing markers
-        this._clearPlaceMarkers();
+        // Create a map of existing markers by ID
+        const existingMarkers = new Map();
+        this._placeMarkers.forEach(marker => {
+            existingMarkers.set(marker.poiId || marker.placeId, marker);
+        });
+
+        // Track new markers
+        const newMarkers = [];
 
         pois.forEach((poi, index) => {
+            const poiId = poi.id || poi.place_id;
             if (poi.geometry && poi.geometry.location) {
-                // Create marker element with optional type-specific styling
-                const el = document.createElement('div');
-                el.className = `poi-marker ${options.markerClass || ''} ${index === 2 ? 'selected' : ''}`;
-                el.style.width = '16px';
-                el.style.height = '16px';
-                el.style.borderRadius = '50%';
-                el.style.backgroundColor = options.getMarkerColor?.(poi) || '#666666';
-                el.style.border = '2px solid white';
-                el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
-                el.style.cursor = 'pointer';
+                let marker = existingMarkers.get(poiId);
+                
+                if (marker) {
+                    // Update existing marker position if needed
+                    marker.setLngLat([
+                        poi.geometry.location.lng,
+                        poi.geometry.location.lat
+                    ]);
+                    existingMarkers.delete(poiId);
+                } else {
+                    // Create marker element with initial styles
+                    const el = document.createElement('div');
+                    el.className = `poi-marker ${options.markerClass || ''}`;
+                    el.style.cssText = `
+                        width: 16px;
+                        height: 16px;
+                        border-radius: 50%;
+                        background-color: ${options.getMarkerColor?.(poi) || '#666666'};
+                        border: 2px solid white;
+                        box-shadow: 0 0 4px rgba(0,0,0,0.3);
+                        cursor: pointer;
+                        opacity: 0;
+                        transition: opacity 0.3s ease-in-out;
+                    `;
 
-                // Create and add marker
-                const marker = new mapboxgl.Marker({
-                    element: el
-                })
-                .setLngLat([
-                    poi.geometry.location.lng,
-                    poi.geometry.location.lat
-                ])
-                .addTo(this._map);
+                    // Create marker but don't add to map yet
+                    marker = new mapboxgl.Marker({
+                        element: el
+                    })
+                    .setLngLat([
+                        poi.geometry.location.lng,
+                        poi.geometry.location.lat
+                    ]);
 
-                // Store the POI data with the marker
-                marker.poiId = poi.id;
-                marker.poiData = poi;
+                    // Store data and add handlers
+                    marker.poiId = poiId;
+                    marker.poiData = poi;
 
-                // Inside addPOIMarkers method, update the event handling
-                el.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    console.log('🗺️ POI marker clicked:', poi.name, '(', poi.id, ')');
-                    this.selectMarker(poi.id);
-                    this._markerClickCallbacks.forEach(callback => callback(poi));
-                });
+                    el.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        this.selectMarker(poiId);
+                        this._markerClickCallbacks.forEach(callback => callback(poi));
+                    });
 
-                el.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    console.log('🗺️ POI marker touched:', poi.name, '(', poi.id, ')');
-                    this.selectMarker(poi.id);
-                    this._markerClickCallbacks.forEach(callback => callback(poi));
-                }, { passive: false });
+                    el.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        this.selectMarker(poiId);
+                        this._markerClickCallbacks.forEach(callback => callback(poi));
+                    }, { passive: false });
 
-                this._placeMarkers.push(marker);
+                    // Add to tracking arrays
+                    newMarkers.push(marker);
+                }
             }
         });
 
-        // Notify callbacks of the POI update
+        // Remove old markers with fade
+        existingMarkers.forEach(marker => {
+            const el = marker.getElement();
+            el.style.opacity = '0';
+            setTimeout(() => marker.remove(), 300);
+        });
+
+        // Add new markers to map and fade them in with stagger
+        newMarkers.forEach((marker, index) => {
+            // Add to map first
+            marker.addTo(this._map);
+            
+            // Force a reflow to ensure the transition works
+            marker.getElement().offsetHeight;
+
+            // Fade in with stagger
+            setTimeout(() => {
+                marker.getElement().style.opacity = '1';
+            }, index * 50);
+        });
+
+        // Update marker tracking array
+        this._placeMarkers = this._placeMarkers
+            .filter(marker => !existingMarkers.has(marker.poiId || marker.placeId))
+            .concat(newMarkers);
+
+        // Notify callbacks
         this._notifyCallbacks(pois, {
             event: 'poi_update',
             source: options.source || 'poi_search'

@@ -83,6 +83,18 @@ export default class PlacesComponent {
         }
     }
 
+    _normalizeHours(hoursArray) {
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const normalized = {};
+
+        dayNames.forEach((day, index) => {
+            const dayData = hoursArray?.find(h => h.name === index);
+            normalized[day] = dayData?.hours || [];
+        });
+
+        return normalized;
+    }
+
     _processPlacesData(places, userLocation) {
         return places.map(place => {
             let distance = null;
@@ -98,8 +110,12 @@ export default class PlacesComponent {
                 formattedDistance = this._formatDistance(distance);
             }
 
+            // Normalize hours if they exist
+            const normalizedHours = place.hours ? this._normalizeHours(place.hours) : null;
+
             return {
                 ...place,
+                hours: normalizedHours,
                 distance,
                 formattedDistance
             };
@@ -201,6 +217,7 @@ export default class PlacesComponent {
         const card = document.createElement('div');
         card.className = 'place-card';
         card.dataset.placeId = place.place_id;
+        card.style.flexShrink = '1';
         
         // Create the basic structure
         card.innerHTML = `
@@ -317,46 +334,85 @@ export default class PlacesComponent {
             this._currentIntersectionObserver.disconnect();
         }
 
-        // Create new observer
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (this._isProgrammaticScroll || this._isTransitioning) return;
-                const now = Date.now();
-                if (now - this._lastScrollTime < 2000) return;
+        // Only use intersection observer on mobile
+        const isMobile = window.innerWidth < 1024;
+        
+        if (isMobile) {
+            // Create new observer for mobile
+            const observer = new IntersectionObserver(
+                (entries) => {
+                    if (this._isProgrammaticScroll || this._isTransitioning) return;
+                    const now = Date.now();
+                    if (now - this._lastScrollTime < 2000) return;
 
-                let maxRatio = 0;
-                let mostVisibleCard = null;
+                    let maxRatio = 0;
+                    let mostVisibleCard = null;
 
-                entries.forEach(entry => {
-                    if (entry.intersectionRatio > maxRatio) {
-                        maxRatio = entry.intersectionRatio;
-                        mostVisibleCard = entry.target;
+                    entries.forEach(entry => {
+                        if (entry.intersectionRatio > maxRatio) {
+                            maxRatio = entry.intersectionRatio;
+                            mostVisibleCard = entry.target;
+                        }
+                    });
+
+                    if (mostVisibleCard && maxRatio > 0.5) {
+                        const placeId = mostVisibleCard.dataset.placeId;
+                        
+                        this._isUpdating = true;
+                        document.querySelectorAll('.place-card').forEach(card => {
+                            card.dataset.selected = (card.dataset.placeId === placeId).toString();
+                        });
+                        this._mapService.selectMarker(placeId);
+                        this._isUpdating = false;
                     }
-                });
+                },
+                {
+                    root: placesScroll,
+                    threshold: [0, 0.25, 0.5, 0.75, 1],
+                    rootMargin: '-10% 0px -10% 0px'
+                }
+            );
 
-                if (mostVisibleCard && maxRatio > 0.5) {
-                    const placeId = mostVisibleCard.dataset.placeId;
-                    //console.log('👁️ Observer selecting:', placeId);
-                    
+            // Observe cards for mobile
+            placesScroll.querySelectorAll('.place-card').forEach(card => {
+                observer.observe(card);
+            });
+
+            this._currentIntersectionObserver = observer;
+        }
+
+        // Add click and hover handlers to cards
+        placesScroll.querySelectorAll('.place-card').forEach(card => {
+            // Add hover handlers for desktop
+            if (!isMobile) {
+                card.addEventListener('mouseenter', () => {
+                    if (this._isUpdating) return;
                     this._isUpdating = true;
-                    document.querySelectorAll('.place-card').forEach(card => {
-                        card.dataset.selected = (card.dataset.placeId === placeId).toString();
+                    
+                    const placeId = card.dataset.placeId;
+                    document.querySelectorAll('.place-card').forEach(c => {
+                        c.dataset.selected = (c.dataset.placeId === placeId).toString();
                     });
                     this._mapService.selectMarker(placeId);
+                    
                     this._isUpdating = false;
-                }
-            },
-            {
-                root: placesScroll,
-                threshold: [0, 0.25, 0.5, 0.75, 1],
-                rootMargin: '-10% 0px -10% 0px'
-            }
-        );
+                });
 
-        // Add click handlers and observe cards
-        placesScroll.querySelectorAll('.place-card').forEach(card => {
-            observer.observe(card);
+                // Add mouseleave to clear selection
+                card.addEventListener('mouseleave', () => {
+                    if (this._isUpdating) return;
+                    this._isUpdating = true;
+                    
+                    document.querySelectorAll('.place-card').forEach(c => {
+                        c.dataset.selected = "false";
+                    });
+                    this._mapService.selectMarker(null);
+                    
+                    this._isUpdating = false;
+                });
+            }
             
+            // Add click handler for both mobile and desktop
             card.addEventListener('click', () => {
                 if (this._isUpdating) return;
                 this._isUpdating = true;
@@ -375,8 +431,6 @@ export default class PlacesComponent {
                 this._isUpdating = false;
             });
         });
-
-        this._currentIntersectionObserver = observer;
     }
 
     _scrollIntoViewWithOffset(el, scrollContainer, offset) {
@@ -411,63 +465,184 @@ export default class PlacesComponent {
         checkScrollEnd();
     }
 
-    _showPlaceDetails(place) {
-        const sheet = document.querySelector('.place-details-sheet');
-        const backdrop = document.querySelector('.place-details-backdrop');
-        const detailsDiv = sheet.querySelector('.details');
-        
-        // Format types for display
-        const formattedTypes = (place.types || [])
-            .filter(type => !['point_of_interest', 'establishment'].includes(type))
-            .map(type => type.replace(/_/g, ' '))
-            .join(', ') || 'Business';
-        
-        // Build the content HTML
-        let contentHTML = `
-            ${place.photos && place.photos.length > 0 ? `
-                <div class="photos">
-                    <div class="photo-grid">
-                        ${place.photos.map(photo => `
-                            <img 
-                                src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${this._mapService._googleApiKey}"
-                                alt="${place.name}"
-                                loading="lazy"
-                            >
-                        `).join('')}
+    async _showPlaceDetails(place) {
+        const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
+        if (!card) return;
+
+        // Toggle expanded state
+        const wasExpanded = card.dataset.expanded === 'true';
+        if (wasExpanded) {
+            // Always unexpand all cards when clicking an expanded card
+            document.querySelectorAll('.place-card').forEach(c => {
+                c.dataset.expanded = 'false';
+                c.dataset.selected = 'false';  // Unselect all cards
+                c.style.transition = 'width 0.2s ease-in-out';
+                c.style.width = '240px';
+                c.style.flexShrink = '1';
+                
+                const detailsDiv = c.querySelector('.place-details');
+                if (detailsDiv) {
+                    detailsDiv.style.opacity = '0';
+                    detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
+                    setTimeout(() => {
+                        detailsDiv.remove();
+                    }, 200);
+                }
+            });
+            this._mapService.selectMarker(null);  // Unselect marker
+            return;
+        }
+
+        try {
+            // Fetch additional place details using Supabase function
+            const response = await fetch('https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    placeId: place.place_id
+                })
+            });
+
+            const detailsData = await response.json();
+            const details = detailsData.result;
+
+            if (!details) {
+                throw new Error('No details returned');
+            }
+
+            // Update selection state
+            document.querySelectorAll('.place-card').forEach(c => {
+                c.dataset.selected = (c === card).toString();
+            });
+            this._mapService.selectMarker(place.place_id);
+
+            // Expand card width with transition
+            card.style.transition = 'width 0.2s ease-in-out';
+            card.style.width = '280px';
+            card.style.flexShrink = '0';
+            card.dataset.expanded = 'true';
+
+            // Get current day name in lowercase
+            const today = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
+            
+            // Create details section
+            const detailsDiv = document.createElement('div');
+            detailsDiv.className = 'place-details border-t border-gray-200 mt-2';
+            
+            detailsDiv.innerHTML = `
+                <div class="p-2">
+                    ${details.editorial_summary?.overview ? `
+                        <div class="text-gray-900 text-xs mb-3">
+                            ${details.editorial_summary.overview}
+                        </div>
+                    ` : ''}
+
+                    <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                        <div class="font-medium text-gray-400">NEIGHBORHOOD</div>
+                        <div class="text-gray-900">${
+                            details.address_components?.find(c => c.types.includes('neighborhood'))?.long_name || 
+                            'Location not specified'
+                        }</div>
+
+                        <div class="font-medium text-gray-400">ADDRESS</div>
+                        <div class="text-gray-900">${details.vicinity}</div>
+
+                        <div class="font-medium text-gray-400">STATUS</div>
+                        <div class="text-gray-900">
+                            ${details.current_opening_hours?.open_now ? 
+                                '<span class="text-green-600 font-medium">Open Now</span>' : 
+                                '<span class="text-red-600 font-medium">Closed</span>'
+                            }
+                        </div>
+                        ${details.current_opening_hours?.weekday_text.map(day => {
+                            const [dayName, hours] = day.split(': ');
+                            return `<div class="text-gray-400 justify-self-end">${dayName.slice(0,3)}</div>
+                                    <div class="text-gray-900">${hours}</div>`;
+                        }).join('')}
+
+                        ${place.hours ? `
+                            <div class="font-medium text-gray-400">HOURS</div>
+                            <div class="text-gray-600 space-y-0.5">
+                                ${Object.entries(place.hours).map(([day, ranges]) => {
+                                    const timeRanges = ranges?.map(range => {
+                                        const start = range.start.replace(/(\d{2})(\d{2})/, '$1:$2');
+                                        const end = range.end.replace(/(\d{2})(\d{2})/, '$1:$2');
+                                        return `${start}-${end}`;
+                                    }).join(', ') || 'Closed';
+                                    return `<div class="${day === today ? 'font-medium' : ''}">${day.slice(0,2).toUpperCase()}: ${timeRanges}</div>`;
+                                }).join('')}
+                            </div>
+                        ` : ''}
+
+                        ${details.serves_breakfast || details.serves_lunch || details.serves_dinner ? `
+                            <div class="font-medium text-gray-400">SERVES</div>
+                            <div class="flex flex-wrap gap-1">
+                                ${details.serves_breakfast ? '<span class="text-gray-600">Breakfast</span>' : ''}
+                                ${details.serves_lunch ? '<span class="text-gray-600">Lunch</span>' : ''}
+                                ${details.serves_dinner ? '<span class="text-gray-600">Dinner</span>' : ''}
+                                ${details.serves_brunch ? '<span class="text-gray-600">Brunch</span>' : ''}
+                            </div>
+                        ` : ''}
+
+                        ${details.price_level ? `
+                            <div class="font-medium text-gray-400">PRICE</div>
+                            <div class="text-gray-900">${'$'.repeat(details.price_level)}</div>
+                        ` : ''}
+
+                        ${details?.formatted_phone_number ? `
+                            <div class="font-medium text-gray-400">CONTACT</div>
+                            <div>
+                                <a href="tel:${details.formatted_phone_number}" class="text-blue-600 hover:text-blue-800">
+                                    ${details.formatted_phone_number}
+                                </a>
+                            </div>
+                        ` : ''}
+
+                        ${details?.website ? `
+                            <div class="font-medium text-gray-400">WEBSITE</div>
+                            <div>
+                                <a href="${details.website}" target="_blank" class="text-blue-600 hover:text-blue-800">
+                                    ${new URL(details.website).hostname}
+                                </a>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
-            ` : ''}
+            `;
 
-            <div class="content-grid">
-                <div class="main-info">
-                    <div class="place-type">${formattedTypes}</div>
-                    <h2 class="name">${place.name || 'Unnamed Location'}</h2>
-                </div>
+            // Add transition for details appearance
+            detailsDiv.style.opacity = '0';
+            detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
+            
+            // Append details to card
+            card.querySelector('.flex-1').appendChild(detailsDiv);
+            
+            // Trigger reflow and fade in
+            requestAnimationFrame(() => {
+                detailsDiv.style.opacity = '1';
+            });
 
-                <div class="info-row">
-                    <span class="material-icons">schedule</span>
-                    ${place.opening_hours?.open_now !== undefined
-                        ? `<span class="${place.opening_hours.open_now ? 'open' : 'closed'}">${place.opening_hours.open_now ? 'OPEN' : 'CLOSED'}</span>`
-                        : `<span class="unknown">Status unknown</span>`
-                    }
-                </div>
-
-                <div class="info-row">
-                    <span class="material-icons">place</span>
-                    <span>${place.vicinity || 'Address not available'}</span>
-                </div>
-
-                ${place.rating ? `
-                    <div class="info-row">
-                        <span class="material-icons">star</span>
-                        <span>${place.rating} ⭐️ (${place.user_ratings_total || 0})</span>
-                    </div>
-                ` : ''}
-            </div>
-        `;
-
-        detailsDiv.innerHTML = contentHTML;
-        sheet.classList.add('active');
-        backdrop.classList.add('active');
+        } catch (error) {
+            console.error('Error fetching place details:', error);
+            // Unexpand all cards on error too
+            document.querySelectorAll('.place-card').forEach(c => {
+                c.dataset.expanded = 'false';
+                c.dataset.selected = 'false';  // Unselect all cards
+                c.style.transition = 'width 0.2s ease-in-out';
+                c.style.width = '240px';
+                c.style.flexShrink = '1';
+                const detailsDiv = c.querySelector('.place-details');
+                if (detailsDiv) {
+                    detailsDiv.style.opacity = '0';
+                    detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
+                    setTimeout(() => {
+                        detailsDiv.remove();
+                    }, 200);
+                }
+            });
+            this._mapService.selectMarker(null);  // Unselect marker on error
+        }
     }
 } 

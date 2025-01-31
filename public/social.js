@@ -3,6 +3,7 @@ locationService.requestGeoLocation();
 
 import MapService from '/src/services/mapService.js';
 import PlacesComponent from '/src/components/placesComponent.js';
+import EventsComponent from '/src/components/eventsComponent.js';
 
 const mapService = new MapService(locationService, {
     mapContainer: 'map',
@@ -199,6 +200,10 @@ function router() {
         if (!window.placesComponent) {
             console.log('📦 Creating places component');
             window.placesComponent = new PlacesComponent(mapService, locationService);
+        }
+        if (!window.eventsComponent) {
+            console.log('🎫 Creating events component');
+            window.eventsComponent = new EventsComponent(mapService, locationService);
         }
         if (currentPlaces.length > 0) {
             console.log('📦 Updating places with existing data');
@@ -454,24 +459,4 @@ async function updatePOIs() {
             }
         });
     }
-}
-
-// Add function to fetch events from Eventbrite
-async function fetchNearbyEvents(lat, lng) {
-    const response = await fetch(`/api/events?lat=${lat}&lng=${lng}`);
-    const events = await response.json();
-    return events.map(event => ({
-        id: event.id,
-        name: event.name.text,
-        geometry: {
-            location: {
-                lat: event.venue.latitude,
-                lng: event.venue.longitude
-            }
-        },
-        vicinity: event.venue.address.localized_address_display,
-        start: event.start,
-        end: event.end,
-        // ... map other relevant fields
-    }));
 }
