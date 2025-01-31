@@ -149,4 +149,258 @@
     font-size: 14px;
     color: #ffffff !important;
     opacity: 0.9;
+}
+
+/* Hamburger Menu Animations */
+.hamburger-line {
+    transition: all 0.3s ease-in-out;
+}
+
+.hamburger.open .hamburger-line:nth-child(1) {
+    transform: translateY(8px) rotate(45deg);
+}
+
+.hamburger.open .hamburger-line:nth-child(2) {
+    opacity: 0;
+}
+
+.hamburger.open .hamburger-line:nth-child(3) {
+    transform: translateY(-8px) rotate(-45deg);
+}
+
+#mobile-sidebar {
+    transition: transform 0.3s ease-in-out;
+}
+
+/* Places List Styles */
+#places-container {
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.places-scroll {
+    display: flex;
+    overflow-x: auto;
+    gap: 12px;
+    _scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    width: 100%;
+}
+
+.places-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.place-card {
+    flex: 0 0 auto;
+    width: 280px;
+    min-width: 280px;
+    background: white;
+    padding: 0;  /* Changed from padding: 12px */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    scroll-snap-align: start;
+    overflow: hidden;  /* For image corners */
+}
+
+.place-card .place-image {
+    width: 100%;
+    height: 160px;
+    overflow: hidden;
+}
+
+.place-card .place-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.place-card .header {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 12px 12px 0;
+}
+
+.place-card .types-scroll {
+    white-space: nowrap;
+    overflow-x: auto;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    margin-bottom: 2px;
+    padding-bottom: 4px;  /* Add space for border */
+    border-bottom: 1px solid #ddd;  /* Light gray underline */
+}
+
+.place-card .types-scroll::-webkit-scrollbar {
+    display: none;  /* Hide scrollbar for Chrome, Safari and Opera */
+}
+
+.place-card .type {
+    font-size: 0.625rem;  /* 10px */
+    line-height: 0.875rem;   /* 14px */
+    color: #666;
+    text-transform: capitalize;
+    padding: 0 2px;  /* Minimal padding */
+    border-radius: 0;  /* Remove bubble */
+    background: none;  /* Remove background */
+}
+
+.place-card .name {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.place-card .status {
+}
+
+.place-card .status.open {
+    color: #00A572;
+}
+
+.place-card .status.closed {
+    color: #E31C5F;
+}
+
+.place-card .free-drink {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));  /* Make it stand out on images */
+}
+
+/* Place Details Sheet */
+.place-details-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    z-index: 999;
+}
+
+.place-details-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.place-details-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-radius: 16px 16px 0 0;
+    padding: 20px;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    transform: translateY(100%);
+    transition: transform 0.3s ease-out;
+    z-index: 1000;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.place-details-sheet.active {
+    transform: translateY(0);
+}
+
+.place-details-sheet .close-button {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+}
+
+.place-details-sheet .content-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.place-details-sheet .main-info {
+    grid-column: 1 / -1;
+}
+
+.place-details-sheet .place-type {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 4px;
+    text-transform: capitalize;
+}
+
+.place-details-sheet .name {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+}
+
+.place-details-sheet .info-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: #f8f8f8;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.place-details-sheet .info-row .material-icons {
+    color: #666;
+}
+
+.place-details-sheet .open {
+    color: #00A572;
+    font-weight: 500;
+}
+
+.place-details-sheet .closed {
+    color: #E31C5F;
+    font-weight: 500;
+}
+
+.place-details-sheet .price-level {
+    display: flex;
+    align-items: center;
+    color: #666;
+}
+
+.place-details-sheet .photos {
+    grid-column: 1 / -1;
+    margin: 0 -20px;
+}
+
+.place-details-sheet .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    padding: 0 20px;
+}
+
+.place-details-sheet .photo-grid img {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.place-details-sheet .unknown {
+    color: #666;
+    font-weight: 500;
 } 

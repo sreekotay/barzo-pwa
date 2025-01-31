@@ -10,10 +10,89 @@ const mapService = new MapService(locationService, {
     searchInput: 'search-container',
     searchInputLevel: 'neighborhood',
     initialZoom: 13,
-    nearbyPlaces: 30
+    nearbyPlaces: 30,
+    placesEndpoint: 'supabase'  // Make sure we're using Supabase endpoint
 });
 
 mapService.initialize();
+
+// Keep track of places data
+let currentPlaces = [];
+
+// Update places change callback to store data
+mapService.onPlacesChange((places) => {
+    console.log('Places update received:', places);
+    currentPlaces = places; // Store the places data
+    updatePlacesContainer(places);
+});
+
+// Separate function to update places container
+function updatePlacesContainer(places) {
+    const placesContainer = document.querySelector('#places-container');
+    if (!placesContainer) {
+        console.log('No places container found');
+        return;
+    }
+
+    if (!places || places.length === 0) {
+        console.log('No places data received');
+        placesContainer.innerHTML = '<p>No places found nearby</p>';
+        return;
+    }
+
+    placesContainer.innerHTML = `
+        <div class="places-scroll pb-2">
+            <div class="w-1" style="flex-shrink: 0;"></div>
+            ${places.map(place => `
+                <div class="place-card" data-place-id="${place.place_id}">
+                    ${place.photos && place.photos.length > 0 ? `
+                        <div class="place-image">
+                            <img 
+                                src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${mapService._googleApiKey}"
+                                alt="${place.name}"
+                                loading="lazy"
+                            >
+                        </div>
+                    ` : ''}
+                    <div class="flex-1 px-2 pb-2">
+                        <div class="types-scroll nowrap">
+                            ${(place.types || [])
+                                .filter(type => !['point_of_interest', 'establishment'].includes(type))
+                                .map((type, index, array) => `
+                                    <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>${index < array.length - 1 ? '<span class="text-gray-300"> | </span>' : ''}
+                                `).join('')}
+                        </div>
+                        <h3 class="name">${place.name}</h3>
+                        <div class="flex" style="align-items: baseline;">
+                            <div class="status ${place.opening_hours?.open_now ? 'open' : 'closed'}">
+                                ${place.opening_hours?.open_now ? 'OPEN' : 'CLOSED'}
+                            </div>
+                            <div class="flex-1"></div>
+                            <div class="text-gray-500 text-xs pr-1">${place.formattedDistance}</div>
+                        </div>
+                    </div>
+                    <img 
+                        src="/images/free-drink.png" 
+                        alt="Free Drink Available" 
+                        class="free-drink"
+                    >
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    // Add click handlers to cards
+    placesContainer.querySelectorAll('.place-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const placeId = card.dataset.placeId;
+            const marker = mapService._placeMarkers.find(m => m.placeId === placeId);
+            if (marker) {
+                marker.getElement().click();
+            }
+        });
+    });
+}
+
 // Private functions
 function initializeMobileMenu() {
     const hamburger = document.getElementById('hamburger-menu');
@@ -42,8 +121,9 @@ function initializeMobileMenu() {
 
 const routes = {
     home: `
-        <h1 class="text-2xl font-bold mb-6">Welcome to Barzo</h1>
-        <div class="bg-white rounded-lg shadow p-6">
+        <div id="places-container" class="pt-4"></div>
+        <h1 class="text-2xl font-bold mb-2 mx-4">Welcome to Barzo</h1>
+        <div class="bg-white rounded-lg shadow mx-4 p-6">
             <h2 class="text-xl font-semibold mb-4">Latest Updates</h2>
             <div class="space-y-4">
                 <div class="border-b pb-4">
@@ -58,8 +138,8 @@ const routes = {
         </div>
     `,
     profile: `
-        <h1 class="text-2xl font-bold mb-6">Your Profile</h1>
-        <div class="bg-white rounded-lg shadow p-6">
+        <h1 class="text-2xl font-bold mb-2 pt-4 px-2 mx-4">Your Profile</h1>
+        <div class="bg-white rounded-lg shadow p-6 mx-4">
             <div class="flex items-center mb-6">
                 <div class="w-20 h-20 bg-gray-200 rounded-full mr-4"></div>
                 <div>
@@ -80,8 +160,8 @@ const routes = {
         </div>
     `,
     settings: `
-        <h1 class="text-2xl font-bold mb-6">Settings</h1>
-        <div class="bg-white rounded-lg shadow p-6">
+        <h1 class="text-2xl font-bold pt-4 mb-2 mx-4">Settings</h1>
+        <div class="bg-white rounded-lg shadow p-6 mx-4">
             <div class="space-y-6">
                 <div class="border-b pb-4">
                     <h3 class="font-medium mb-2">Account Settings</h3>
@@ -109,13 +189,19 @@ const routes = {
     `
 };
 
+// Modify router to handle places container
 function router() {
-    const mainContents = document.querySelectorAll('.main-content');
+    console.log('Router called, path:', window.location.hash);
+    const mainContent = document.querySelector('#main-content');
     const path = window.location.hash.slice(1) || 'home';
     const content = routes[path] || routes.home;
-    mainContents.forEach(mainContent => {
-        mainContent.innerHTML = content;
-    });
+    mainContent.innerHTML = content;
+    console.log('Content updated for main-content');
+
+    // Re-render places if we're on the home route and have places data
+    if (path === 'home' && currentPlaces.length > 0) {
+        updatePlacesContainer(currentPlaces);
+    }
 }
 
 export function initialize() {

@@ -79,6 +79,8 @@ class MapService {
 
         /** @type {mapboxgl.Marker[]} */
         this._placeMarkers = [];  // Array to store place markers
+
+        this._placesChangeCallbacks = [];
     }
 
     /**
@@ -87,6 +89,29 @@ class MapService {
     async initialize() {
         // Load Mapbox GL JS
         await this._loadMapboxGL();
+        
+        // Remove the style injection code and just create containers
+        const sheetContainer = document.createElement('div');
+        sheetContainer.innerHTML = `
+            <div class="place-details-backdrop"></div>
+            <div class="place-details-sheet">
+                <button class="close-button">&times;</button>
+                <div class="details"></div>
+            </div>
+        `;
+        document.body.appendChild(sheetContainer);
+        
+        // Setup sheet close handlers
+        const sheet = sheetContainer.querySelector('.place-details-sheet');
+        const backdrop = sheetContainer.querySelector('.place-details-backdrop');
+        const closeButton = sheet.querySelector('.close-button');
+        
+        [backdrop, closeButton].forEach(el => {
+            el.addEventListener('click', () => {
+                sheet.classList.remove('active');
+                backdrop.classList.remove('active');
+            });
+        });
         
         // Get cached location
         const cachedLocation = this._locationService.getUserLocationCached();
@@ -206,8 +231,11 @@ class MapService {
         // Subscribe to map location updates for nearby places
         if (this._nearbyPlaces) {
             this._locationService.onMapLocationChange(
-                async (location) => {
-                    await this._handleNearbyPlaces(location);
+                location => {
+                    console.log('Location update received:', location);
+                    if (location) {
+                        this._handleNearbyPlaces(location);
+                    }
                 },
                 {
                     realtime: false,
@@ -610,34 +638,32 @@ class MapService {
             return true;
         });
 
-        // Add or update markers
         places.forEach(place => {
             if (place.geometry && place.geometry.location) {
                 const existingMarker = existingMarkers.get(place.place_id);
                 
                 if (existingMarker) {
-                    // Update existing marker position if needed
+                    // Update existing marker position and data
                     existingMarker.setLngLat([
                         place.geometry.location.lng,
                         place.geometry.location.lat
                     ]);
+                    existingMarker.placeData = place; // Update the stored place data
+                    
+                    // Update marker color based on open/closed status
+                    const markerEl = existingMarker.getElement();
+                    markerEl.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#666666';
                 } else {
                     // Create new marker
                     const el = document.createElement('div');
                     el.className = 'place-marker';
-                    el.style.width = '25px';
-                    el.style.height = '25px';
-                    el.style.backgroundImage = 'url(https://maps.google.com/mapfiles/ms/icons/red-dot.png)';
-                    el.style.backgroundSize = 'contain';
+                    el.style.width = '12px';
+                    el.style.height = '12px';
+                    el.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#666666';
+                    el.style.borderRadius = '50%';
+                    el.style.border = '2px solid white';
+                    el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
                     el.style.cursor = 'pointer';
-
-                    // Create popup
-                    const popup = new mapboxgl.Popup({ offset: 25 })
-                        .setHTML(`
-                            <h3>${place.name}</h3>
-                            <p>${place.vicinity || ''}</p>
-                            ${place.rating ? `<p>Rating: ${place.rating} ⭐️</p>` : ''}
-                        `);
 
                     // Create and add marker
                     const marker = new mapboxgl.Marker(el)
@@ -645,11 +671,97 @@ class MapService {
                             place.geometry.location.lng,
                             place.geometry.location.lat
                         ])
-                        .setPopup(popup)
                         .addTo(this._map);
 
-                    // Store the place ID with the marker
+                    // Store the full place data with the marker
                     marker.placeId = place.place_id;
+                    marker.placeData = place;
+
+                    // Add click handler to show details sheet
+                    el.addEventListener('click', () => {
+                        console.log('Stored place data:', marker.placeData);
+                        
+                        const sheet = document.querySelector('.place-details-sheet');
+                        const backdrop = document.querySelector('.place-details-backdrop');
+                        const detailsDiv = sheet.querySelector('.details');
+                        
+                        // Use the stored place data for display
+                        const storedPlace = marker.placeData;
+                        
+                        // Format types for display - with safety checks
+                        const formattedTypes = (storedPlace.types || [])
+                            .filter(type => !['point_of_interest', 'establishment'].includes(type))
+                            .map(type => type.replace(/_/g, ' '))
+                            .join(', ') || 'Business';
+                        
+                        // Build the content HTML
+                        let contentHTML = `
+                            <div class="content-grid">
+                                <div class="main-info">
+                                    <div class="place-type">${formattedTypes}</div>
+                                    <h2 class="name">${storedPlace.name || 'Unnamed Location'}</h2>
+                                </div>
+
+                                <div class="info-row">
+                                    <span class="material-icons">schedule</span>
+                                    ${storedPlace.opening_hours?.open_now !== undefined
+                                        ? `<span class="${storedPlace.opening_hours.open_now ? 'open' : 'closed'}">${storedPlace.opening_hours.open_now ? 'OPEN' : 'CLOSED'}</span>`
+                                        : `<span class="unknown">Status unknown</span>`
+                                    }
+                                </div>
+
+                                <div class="info-row">
+                                    <span class="material-icons">payments</span>
+                                    <span class="price-level">
+                                        ${storedPlace.price_level ? '$'.repeat(storedPlace.price_level) : 'Price not specified'}
+                                    </span>
+                                </div>
+
+                                <div class="info-row">
+                                    <span class="material-icons">place</span>
+                                    <span>${storedPlace.vicinity || 'Address not available'}</span>
+                                </div>
+
+                                ${storedPlace.rating ? `
+                                    <div class="info-row">
+                                        <img 
+                                            src="${storedPlace.icon || ''}" 
+                                            alt="Place icon"
+                                            style="width: 24px; height: 24px; background-color: ${storedPlace.icon_background_color || '#FF9E67'}"
+                                        >
+                                        <span>${storedPlace.rating} ⭐️ (${storedPlace.user_ratings_total || 0})</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+
+                        // Add photos if available
+                        if (storedPlace.photos && storedPlace.photos.length > 0) {
+                            contentHTML += `
+                                <div class="photos">
+                                    <div class="photo-grid">
+                                        ${storedPlace.photos.map(photo => `
+                                            <img 
+                                                src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${this._googleApiKey}"
+                                                alt="${storedPlace.name}"
+                                                loading="lazy"
+                                            >
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        contentHTML += '</div>'; // Close content-grid
+
+                        // Update content
+                        detailsDiv.innerHTML = contentHTML;
+                        
+                        // Show the sheet
+                        sheet.classList.add('active');
+                        backdrop.classList.add('active');
+                    });
+
                     this._placeMarkers.push(marker);
                 }
             }
@@ -657,14 +769,50 @@ class MapService {
     }
 
     /**
+     * Calculate distance between two points in meters
+     * @private
+     */
+    _calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = lat1 * Math.PI/180;
+        const φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2-lat1) * Math.PI/180;
+        const Δλ = (lon2-lon1) * Math.PI/180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c; // Distance in meters
+    }
+
+    /**
+     * Format distance in a human-readable way
+     * @private
+     */
+    _formatDistance(meters) {
+        const miles = meters * 0.000621371; // Convert meters to miles
+        if (miles < 0.1) {
+            return `${Math.round(miles * 5280)}ft`; // Show in feet if less than 0.1 miles
+        } else {
+            return `${miles.toFixed(1)}mi`;
+        }
+    }
+
+    /**
      * Search for nearby places when map location changes
      * @private
      */
     async _handleNearbyPlaces(location) {
-        if (!this._nearbyPlaces) return;
+        if (!this._nearbyPlaces) {
+            console.log('Nearby places disabled');
+            return;
+        }
         
         try {
             const radius = this._calculateRadius();
+            console.log('Fetching places for location:', location, 'radius:', radius);
             
             let endpoint, requestBody;
             
@@ -678,7 +826,6 @@ class MapService {
                     maxResults: typeof this._nearbyPlaces === 'number' ? this._nearbyPlaces : 20
                 };
             } else {
-                // Default to Supabase
                 endpoint = 'https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search';
                 requestBody = {
                     latitude: location.lat,
@@ -688,6 +835,7 @@ class MapService {
                 };
             }
             
+            console.log('Fetching from endpoint:', endpoint, 'with body:', requestBody);
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
@@ -697,23 +845,80 @@ class MapService {
             });
 
             const data = await response.json();
+            console.log('Places API response:', data);
             
             if (data.results) {
-                // Convert the places data to match the format expected by _addPlaceMarkers
-                const places = data.results.map(place => ({
-                    place_id: place.place_id,
-                    name: place.name,
-                    vicinity: place.vicinity,
-                    rating: place.rating,
-                    geometry: {
-                        location: {
-                            lng: place.geometry.location.lng,
-                            lat: place.geometry.location.lat
-                        }
-                    }
-                }));
+                // Get current user location for distance calculation
+                const userLocation = this._locationService.getUserLocationCached();
                 
+                const places = data.results.map(place => {
+                    // Calculate distance if we have user location
+                    let distance = null;
+                    let formattedDistance = null;
+                    if (userLocation && place.geometry && place.geometry.location) {
+                        distance = this._calculateDistance(
+                            userLocation.lat,
+                            userLocation.lng,
+                            place.geometry.location.lat,
+                            place.geometry.location.lng
+                        );
+                        formattedDistance = this._formatDistance(distance);
+                    }
+
+                    return {
+                        // Basic info
+                        place_id: place.place_id,
+                        name: place.name,
+                        vicinity: place.vicinity,
+                        formatted_address: place.formatted_address,
+                        
+                        // Location and distance
+                        geometry: place.geometry,
+                        plus_code: place.plus_code,
+                        distance,           // Distance in meters
+                        formattedDistance, // Formatted distance string
+                        
+                        // Business details
+                        business_status: place.business_status,
+                        opening_hours: place.opening_hours,
+                        price_level: place.price_level,
+                        rating: place.rating,
+                        user_ratings_total: place.user_ratings_total,
+                        
+                        // Types and categories
+                        types: place.types,
+                        
+                        // Visual elements
+                        icon: place.icon,
+                        icon_background_color: place.icon_background_color,
+                        icon_mask_base_uri: place.icon_mask_base_uri,
+                        photos: place.photos,
+                        
+                        // Additional data
+                        html_attributions: place.html_attributions,
+                        scope: place.scope,
+                        reference: place.reference,
+
+                        // Store the raw response too in case we need it
+                        raw_response: place
+                    };
+                });
+                
+                // Sort places by distance if available
+                if (userLocation) {
+                    places.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+                }
+                
+                console.log('Processed places with distances:', places);
                 this._addPlaceMarkers(places);
+                
+                // Notify all callbacks of the places update
+                this._placesChangeCallbacks.forEach(callback => {
+                    console.log('Calling places change callback');
+                    callback(places);
+                });
+            } else {
+                console.log('No results in places response');
             }
 
             // Emit an event with the places data
@@ -724,6 +929,10 @@ class MapService {
         } catch (error) {
             console.error('Error fetching nearby places:', error);
         }
+    }
+
+    onPlacesChange(callback) {
+        this._placesChangeCallbacks.push(callback);
     }
 }
 

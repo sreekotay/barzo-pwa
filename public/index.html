@@ -22,6 +22,7 @@
             }
         }
     </script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4">
     <div class="max-w-md w-full space-y-8 text-center">
@@ -397,6 +398,7 @@
 
                 // Otherwise, show install/continue button
                 actionButton.textContent = isIOS() ? 'Add to Home Screen' : 'Continue to App';
+                
                 if (isIOS()) {
                     actionButton.addEventListener('click', () => {
                         document.getElementById('ios-install-help')?.scrollIntoView({ behavior: 'smooth' });
