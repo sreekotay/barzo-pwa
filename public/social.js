@@ -14,6 +14,11 @@ const mapService = new MapService(locationService, {
     searchInputLevel: 'neighborhood'
 });
 
+if (!localStorage.getItem('authToken')) {
+    //alert ("no auth token");
+    window.location.href = '/legacy.html?redirect=' + encodeURIComponent(window.location.href);
+}
+
 mapService.initialize();
 
 // Keep track of places data

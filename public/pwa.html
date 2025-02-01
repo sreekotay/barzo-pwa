@@ -39,9 +39,9 @@
             if (!authToken) {
                 // No auth token, redirect to auth
                 const currentUrl = encodeURIComponent(window.location.href);
-                const navUrl = `https://chat.barzo.work/otp.html?redirect=${currentUrl}` + '?authToken=${authToken}';
+                const navUrl = `https://chat.barzo.work/otp.html?redirect=${currentUrl}` + encodeURIComponent(window.location.search?'&':'?' + 'authToken=') + '${authToken}';
                 console.log(navUrl);
-                window.location.href = navUrl;
+                alert (navurl)//window.location.href = navUrl;
                 return;
             }
 

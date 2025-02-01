@@ -139,7 +139,11 @@
 
             if (!authToken) {
                 loadingEl.innerHTML = '<p class="text-gray-600">Redirecting to authentication...</p>';
-                const currentUrl = encodeURIComponent(window.location.href) + '?authToken=${authToken}';
+                const redirect = getQueryParam('redirect');
+                if (redirect) localStorage.setItem('redirect_LEGACY', redirect);
+                const url = new URL(window.location.href);
+                url.search = '';
+                const currentUrl = encodeURIComponent(url.href + '?authToken=${authToken}');
                 window.location.href = `https://chat.barzo.work/otp.html?redirect=${currentUrl}`;
                 //window.location.href = `http://192.168.0.6:8080/otp.html?redirect=${currentUrl}`;
                 return;
@@ -148,9 +152,10 @@
             try {
                 globalAuthToken = JSON.parse(decodeURIComponent(authToken));
                 localStorage.setItem('authToken', authToken);
+                const redirect = localStorage.getItem('redirect_LEGACY', redirect);
                 
                 // If we have an authToken in URL, remove it and redirect
-                if (getQueryParam('authToken')) {
+                if (!redirect && getQueryParam('authToken')) {
                     const url = new URL(window.location.href);
                     url.searchParams.delete('authToken');
                     window.location.href = url.toString();
@@ -161,8 +166,10 @@
                 authInfoEl.classList.remove('hidden');
                 authDataEl.textContent = JSON.stringify(globalAuthToken, null, 2);
 
-                const redirect = getQueryParam('redirect');
-                if (redirect) window.location.href = decodeURIComponent(redirect)
+                if (redirect) {
+                    localStorage.removeItem('redirect_LEGACY');
+                    window.location.href = decodeURIComponent(redirect)
+                }
                 else getUserInfo();
             } catch (error) {
                 loadingEl.innerHTML = `<p class="text-red-500">Error parsing auth token: ${error.message}</p>`;
