@@ -2,37 +2,42 @@ import MarkerManager from '../services/markerManager.js';
 import CarouselComponent from './carouselComponent.js';
 
 export default class PlacesComponent {
-    constructor(mapService, locationService, container, config = {}) {
+    constructor(mapService, locationService, containerSelector, config = {}) {
         this._mapService = mapService;
         this._locationService = locationService;
-        this._markerManager = new MarkerManager(mapService);
-        this._container = container;
-        console.log('📦 Places container found:', this._container);
+        this._containerSelector = containerSelector;
+        this._config = {
+            placeTypes: ['bar'],
+            maxResults: 30,
+            endpoint: 'supabase',
+            markerColors: {
+                open: '#E31C5F',
+                closed: '#9CA3AF',
+                pulse: '#E31C5F'
+            },
+            ...config
+        };
+
+        this._setupComponent();
+    }
+
+    _setupComponent() {
+        // Get current container using selector
+        this._container = document.querySelector(this._containerSelector);
+        if (!this._container) {
+            console.warn(`Container not found: ${this._containerSelector}`);
+            return;
+        }
+
+        // Initialize properties
+        this._markerManager = new MarkerManager(this._mapService);
         this._currentPlaces = [];
         this._currentIntersectionObserver = null;
         this._isUpdating = false;
         this._lastScrollTime = 0;
         this._isProgrammaticScroll = false;
         this._isTransitioning = false;
-        this._nearbyPlaces = 30;
-        this._placesEndpoint = 'supabase';
-
-        // Configuration with defaults
-        this._config = {
-            placeTypes: ['bar'],  // Default type
-            maxResults: 30,       // Default max results
-            endpoint: 'supabase', // Default endpoint
-            markerColors: {
-                open: '#E31C5F',    // Default open marker color
-                closed: '#9CA3AF',  // Default closed marker color
-                pulse: '#E31C5F'    // Default pulse color
-            },
-            ...config            // Override with provided config
-        };
-
-        if (!this._container) {
-            throw new Error('Container element is required for PlacesComponent');
-        }
+        this._carousel = new CarouselComponent(this._container);
 
         // Bind methods
         this.updatePlaces = this.updatePlaces.bind(this);
@@ -50,7 +55,47 @@ export default class PlacesComponent {
             }
         );
 
-        this._carousel = new CarouselComponent(container);
+        // Wait for map to be ready before initial fetch
+        if (this._mapService.isMapReady()) {
+            const location = this._locationService.getMapLocation();
+            if (location) {
+                this._fetchNearbyPlaces(location);
+            }
+        } else {
+            this._mapService.onMapReady(() => {
+                const location = this._locationService.getMapLocation();
+                if (location) {
+                    this._fetchNearbyPlaces(location);
+                }
+            });
+        }
+    }
+
+    // Call this when switching tabs/routes
+    reset() {
+        // Clean up existing resources
+        if (this._carousel) {
+            this._carousel.destroy();
+        }
+        if (this._markerManager) {
+            this._markerManager.clear();
+        }
+        
+        // NOTE: Do not clear container innerHTML - it causes flicker
+        // if (this._container) {
+        //     this._container.innerHTML = '';
+        // }
+        
+        // Re-setup the component
+        this._setupComponent();
+        
+        // Re-fetch places if map is ready and we have a location
+        if (this._mapService.isMapReady()) {
+            const location = this._locationService.getMapLocation();
+            if (location) {
+                this._fetchNearbyPlaces(location);
+            }
+        }
     }
 
     async _handleLocationChange(location) {
@@ -60,6 +105,7 @@ export default class PlacesComponent {
     }
 
     async _fetchNearbyPlaces(location) {
+        console.log('🌍 Fetching nearby places for location:', location);
         try {
             const radius = this._calculateRadius() * 2 / 3;
             console.log('Fetching places for location:', location, 'radius:', radius);
@@ -103,6 +149,8 @@ export default class PlacesComponent {
             }
         } catch (error) {
             console.error('Error fetching nearby places:', error);
+            console.log('Current DOM state:', document.body.innerHTML);
+            console.log('Container selector:', this._containerSelector);
         }
     }
 
@@ -177,7 +225,18 @@ export default class PlacesComponent {
         }
     }
 
+    _getContainer() {
+        this._container = document.querySelector(this._containerSelector);
+        if (!this._container) {
+            console.warn(`Container not found: ${this._containerSelector}`);
+            return null;
+        }
+        return this._container;
+    }
+
     updatePlaces(places, config = {}) {
+        if (!this._getContainer()) return;
+        
         console.log('📦 Places update from:', config.event, config.source);
         if (config.location) {
             this._fetchNearbyPlaces(config.location);
@@ -188,23 +247,15 @@ export default class PlacesComponent {
     }
 
     _updatePlacesContent(places) {
-        console.log('📦 Updating places container:', this._container, 'with', places?.length, 'places');
+        const container = this._getContainer();
+        if (!container) return;
 
-        // Remove any existing no-places message if it exists
-        const existingNoPlaces = this._container.querySelector('.no-places-message');
-        if (existingNoPlaces) {
-            existingNoPlaces.parentElement.remove();
-        }
-
-        if (!places || places.length === 0) {
-            console.log('No places data received');
+        if (!places?.length) {
             this._carousel.showEmptyMessage('No places found nearby');
             return;
         }
 
         this._currentPlaces = places;
-
-        // Get or create places-scroll container
         let placesScroll = this._carousel.getOrCreateScrollContainer();
 
         // Get existing cards and create a map of placeId -> card
@@ -336,6 +387,9 @@ export default class PlacesComponent {
     }
 
     _handleMarkerClick(place) {
+        const container = this._getContainer();
+        if (!container) return;
+
         this._isUpdating = true;
 
         if (this._currentIntersectionObserver) {
@@ -349,7 +403,7 @@ export default class PlacesComponent {
 
         setTimeout(() => {
             if (this._currentIntersectionObserver) {
-                this._container.querySelectorAll('.place-card').forEach(card => {
+                container.querySelectorAll('.place-card').forEach(card => {
                     this._currentIntersectionObserver.observe(card);
                 });
             }
@@ -358,6 +412,9 @@ export default class PlacesComponent {
     }
 
     _setupCardObserversAndHandlers(placesScroll) {
+        const container = this._getContainer();
+        if (!container) return;
+
         const observer = this._carousel.setupIntersectionObserver((mostVisibleCard) => {
             const placeId = mostVisibleCard.dataset.placeId;
             this._isUpdating = true;
@@ -415,12 +472,15 @@ export default class PlacesComponent {
     }
 
     async _showPlaceDetails(place) {
-        const card = this._container.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
+        const container = this._getContainer();
+        if (!container) return;
+
+        const card = container.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
         if (!card) return;
 
         try {
             // Select this card and marker
-            this._container.querySelectorAll('.place-card').forEach(c => {
+            container.querySelectorAll('.place-card').forEach(c => {
                 c.dataset.selected = (c === card).toString();
             });
             this._markerManager.selectMarker(place.place_id);

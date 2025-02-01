@@ -92,6 +92,9 @@ class MapService {
         this._onAutocompleteSelect = onAutocompleteSelect;
         this._onMapDrag = onMapDrag;
         this._isManualFromAutocomplete = false;  // Add new flag
+
+        /** @type {Function[]} */
+        this._mapReadyCallbacks = [];
     }
 
     /**
@@ -112,14 +115,19 @@ class MapService {
             style: 'mapbox://styles/mapbox/streets-v12',
             zoom: this._initialZoom,
             center: [initialCenter.lng, initialCenter.lat],
-            attributionControl: false,  // Remove attribution
-            logoPosition: 'bottom-right',  // Position logo (will hide with CSS)
+            attributionControl: false,
+            logoPosition: 'bottom-right',
             scrollZoom: {
                 around: 'center'
-              }
+            }
         });
         document.getElementById(this._mapContainer).classList.add('map-loaded');
 
+        // Call any queued callbacks once map is loaded
+        this._map.on('load', () => {
+            this._mapReadyCallbacks.forEach(callback => callback());
+            this._mapReadyCallbacks = []; // Clear the queue
+        });
 
         // Add controls
         this._map.addControl(new mapboxgl.NavigationControl());
@@ -1039,6 +1047,18 @@ class MapService {
                 ...config
             });
         });
+    }
+
+    isMapReady() {
+        return this._map !== null && this._map !== undefined && this._map.loaded();
+    }
+
+    onMapReady(callback) {
+        if (this.isMapReady()) {
+            callback();
+        } else {
+            this._mapReadyCallbacks.push(callback);
+        }
     }
 }
 

@@ -193,94 +193,78 @@ const routes = {
     `
 };
 
-// Modify router to handle both components
-function router() {
-    console.log('Router called, path:', window.location.hash);
-    const mainContent = document.querySelector('#main-content');
-    const path = window.location.hash.slice(1) || 'home';
-    const content = routes[path] || routes.home;
+// Move popstate handler outside of router
+window.addEventListener('popstate', (event) => {
+    const route = window.location.hash.slice(1) || 'home';
     
+    // Update UI for the new route
+    updateActiveTab(route);
+    
+    // Update content and reset components
+    handleRouteChange(route);
+});
+
+function handleRouteChange(route) {
+    const mainContent = document.querySelector('#main-content');
+    
+    // Update content
+    mainContent.innerHTML = routes[route] || routes.home;
     mainContent.className = 'relative z-20';
-    mainContent.innerHTML = content;
-    console.log('Content updated for main-content');
+    
+    // Reset components if we're on home route
+    if (route === 'home') {
+        [window.placesComponent, window.entertainmentComponent].forEach(component => {
+            if (component) component.reset();
+        });
+    }
+}
+
+// Simplify router
+function router() {
+    const path = window.location.hash.slice(1) || 'home';
+    handleRouteChange(path);
 
     // Initialize components when on home route
-    if (path === 'home') {
-        // Initialize venues component
-        const placesContainer = document.querySelector('#places-container');
-        if (!window.placesComponent && placesContainer) {
-            console.log('📦 Creating venues component');
-            window.placesComponent = new PlacesComponent(
-                mapService, 
-                locationService, 
-                placesContainer,
-                {
-                    placeTypes: ['bar', 'night_club'],
-                    maxResults: 30,
-                    endpoint: 'supabase',
-                    markerColors: {
-                        open: '#DC2626',    // Red (red-600)
-                        closed: '#9CA3AF',
-                        pulse: '#DC2626'
-                    }
-                }
-            );
-        }
-
-        // Initialize entertainment component
-        const entertainmentContainer = document.querySelector('#entertainment-container');
-        if (!window.entertainmentComponent && entertainmentContainer) {
-            console.log('🎭 Creating entertainment component');
-            window.entertainmentComponent = new PlacesComponent(
-                mapService, 
-                locationService, 
-                entertainmentContainer,
-                {
-                    placeTypes: ['restaurant', 'cafe'],
-                    maxResults: 20,
-                    endpoint: 'supabase',
-                    markerColors: {
-                        open: '#3B82F6',    // Blue (blue-500)
-                        closed: '#9CA3AF',
-                        pulse: '#3B82F6'
-                    }
-                }
-            );
-        }
-
-        // Update existing places if available
-        if (currentPlaces.length > 0) {
-            console.log('📦 Updating venues with existing data');
-            window.placesComponent.updatePlaces(currentPlaces);
-        }
-
-        // Handle POI toggle for venues
-        const toggleContainer = document.querySelector('.poi-toggle');
-        if (toggleContainer) {
-            toggleContainer.querySelectorAll('button').forEach(button => {
-                button.addEventListener('click', () => {
-                    currentPOIType = button.dataset.type;
-                    
-                    if (currentPOIType === 'venues') {
-                        window.placesComponent.updateConfig({
-                            placeTypes: ['bar', 'restaurant', 'cafe']
-                        });
-                    } else if (currentPOIType === 'events') {
-                        window.placesComponent.updateConfig({
-                            placeTypes: ['night_club', 'event_venue']
-                        });
-                    }
-                    
-                    // Update button styles
-                    toggleContainer.querySelectorAll('button').forEach(b => {
-                        b.classList.toggle('bg-red-600', b.dataset.type === currentPOIType);
-                        b.classList.toggle('text-white', b.dataset.type === currentPOIType);
-                        b.classList.toggle('text-gray-700', b.dataset.type !== currentPOIType);
-                    });
-                });
-            });
-        }
+    if (path === 'home' && !window.placesComponent) {
+        initializeHomeComponents();
     }
+}
+
+// Extract component initialization
+function initializeHomeComponents() {
+    // Initialize venues component
+    window.placesComponent = new PlacesComponent(
+        mapService, 
+        locationService, 
+        '#places-container',
+        {
+            placeTypes: ['bar', 'night_club'],
+            maxResults: 30,
+            endpoint: 'supabase',
+            markerColors: {
+                open: '#DC2626',
+                closed: '#9CA3AF',
+                pulse: '#DC2626'
+            }
+        }
+    );
+
+    // Initialize entertainment component
+    window.entertainmentComponent = new PlacesComponent(
+        mapService, 
+        locationService, 
+        '#entertainment-container',
+        {
+            placeTypes: ['restaurant', 'cafe'],
+            maxResults: 20,
+            endpoint: 'supabase',
+            markerColors: {
+                open: '#3B82F6',
+                closed: '#9CA3AF',
+                pulse: '#3B82F6'
+            }
+        }
+    );
 }
 
 function initMapResize() {
@@ -538,4 +522,11 @@ export function initialize() {
 
 export function updateLocation() {
     return locationService.getUserLocation();
+}
+
+// Helper function to update active tab
+function updateActiveTab(route) {
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.route === route);
+    });
 }
