@@ -148,6 +148,8 @@ class MapService {
             },
             16  // Just pass the debounceMs number directly
         );
+
+        this._geocodedLocation = null;
     }
 
     /**
@@ -182,10 +184,10 @@ class MapService {
             this._mapReadyCallbacks = []; // Clear the queue
         });
 
-        // Add controls
-        this._map.addControl(new mapboxgl.NavigationControl());
+        // Add controls to bottom-left
+        this._map.addControl(new mapboxgl.NavigationControl(), 'bottom-left');
 
-        // Add custom center control
+        // Add custom center control to bottom-left
         const centerControl = new mapboxgl.NavigationControl({
             showCompass: false,
             showZoom: false,
@@ -226,7 +228,7 @@ class MapService {
         this._map.addControl({
             onAdd: () => container,
             onRemove: () => container.remove()
-        }, 'bottom-left');
+        }, 'bottom-left');  // Specify bottom-left position
 
         // Initialize user marker (green dot)
         const userMarkerElement = document.createElement('div');
@@ -547,12 +549,22 @@ class MapService {
      * @private
      */
     _updateUserMarker(location) {
+        // Initialize marker if it doesn't exist
+        if (!this._userMarker && this._map) {
+            this._userMarker = new mapboxgl.Marker({
+                color: '#3B82F6',
+                scale: 0.8
+            });
+        }
+
+        if (!this._userMarker) return; // Exit if map isn't ready yet
+
         if (location) {
             this._userMarker
                 .setLngLat([location.lng, location.lat])
                 .addTo(this._map);
         } else {
-            this._userMarker.remove();
+            this._userMarker?.remove();
         }
     }
 
@@ -561,6 +573,16 @@ class MapService {
      * @private
      */
     _updateMapMarker(location) {
+        // Initialize marker if it doesn't exist
+        if (!this._mapMarker && this._map) {
+            this._mapMarker = new mapboxgl.Marker({
+                color: '#f51324',
+                scale: 0.8
+            });
+        }
+
+        if (!this._mapMarker) return; // Exit if map isn't ready yet
+
         if (location) {
             const startingPoint = this._mapMarker.getLngLat();
             if (!startingPoint) {
@@ -579,7 +601,7 @@ class MapService {
                 this._mapMarker.setLngLat([location.lng, location.lat]);
             }
         } else {
-            this._mapMarker.remove();
+            this._mapMarker?.remove();
         }
     }
 
@@ -618,17 +640,46 @@ class MapService {
     }
 
     /**
+     * Reverse geocode using Mapbox API
+     * @private
+     */
+    async _reverseGeocodeMapbox(location) {
+        try {
+            const response = await fetch(
+                `https://api.mapbox.com/geocoding/v5/mapbox.places/${location.lng},${location.lat}.json?access_token=${this._accessToken}`
+            );
+
+            if (!response.ok) throw new Error('Geocoding failed');
+            
+            const data = await response.json();
+            const feature = data.features[0];
+
+            // Find city and state from context
+            const city = feature.context?.find(c => c.id.startsWith('place'))?.text;
+            const state = feature.context?.find(c => c.id.startsWith('region'))?.text;
+            
+            this._currentPlace = feature;
+            return feature;
+        } catch (error) {
+            console.warn('Reverse geocoding failed:', error);
+            return null;
+        }
+    }
+
+    /**
      * Reverse geocode a location to an address
      * @private
      */
     async _reverseGeocode(location) {
-        // Use proper method to check manual mode
-        if (this._lastAutocompletePlace && this._locationService.isManualMode())
+        if (this._lastAutocompletePlace && this._locationService.isManualMode()) {
             return;
+        }
 
-        // Proceed with normal reverse geocoding
-        if (this._googleApiKey) await this._reverseGeocodeGoogle(location);
-        else await this._reverseGeocodeMapbox(location);
+        if (this._googleApiKey) {
+            await this._reverseGeocodeGoogle(location);
+        } else {
+            await this._reverseGeocodeMapbox(location);
+        }
     }
 
     async _reverseGeocodeGoogle(location) {
@@ -1203,6 +1254,45 @@ class MapService {
                 zoom: this._initialZoom
             });
         }
+    }
+
+    // Add method to get/cache reverse geocoded location
+    async getReverseGeocodedLocation() {
+        const location = this._locationService.getUserLocation();
+        if (!location) return 'Location Unknown';
+
+        // Return cached value if we have it
+        if (this._geocodedLocation) return this._geocodedLocation;
+
+        try {
+            const response = await fetch(
+                `https://api.mapbox.com/geocoding/v5/mapbox.places/${location.lng},${location.lat}.json?access_token=${this._accessToken}`
+            );
+
+            if (!response.ok) throw new Error('Geocoding failed');
+            
+            const data = await response.json();
+            const feature = data.features[0];
+
+            // Find city and state from context
+            const city = feature.context?.find(c => c.id.startsWith('place'))?.text;
+            const state = feature.context?.find(c => c.id.startsWith('region'))?.text;
+            
+            this._geocodedLocation = city && state ? 
+                `${city}, ${state}` : 
+                (feature.place_name ? feature.place_name.split(',').slice(0, 2).join(',') : 'Location Unknown');
+
+            return this._geocodedLocation;
+        } catch (error) {
+            console.error('Error getting location data:', error);
+            return 'Location Unknown';
+        }
+    }
+
+    // Clear cache when location changes significantly
+    _onLocationChange(location) {
+        this._geocodedLocation = null; // Clear cached location
+        // ... rest of existing location change handling
     }
 }
 

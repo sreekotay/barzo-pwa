@@ -1,0 +1,251 @@
+.receipt-container {
+    font-family: 'VT323', monospace;
+    background: white;
+    padding: 0;
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    color: #000;
+    line-height: 1.3;
+    font-size: 16px;
+    position: relative;
+}
+
+.receipt-images {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: 0;
+    background: white;
+}
+
+.receipt-banner {
+    width: 100%;
+    height: 200px;
+    background: #f0f0f0;
+    position: relative;
+}
+
+.receipt-banner img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.receipt-profile-pic {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    border: 4px solid white;
+    position: absolute;
+    bottom: -50px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.receipt-profile-pic img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.receipt-header {
+    top: 200px;
+    z-index: 10;
+    background: white;
+    padding: 60px 20px 15px;
+    margin: 0;
+}
+
+.receipt-logo {
+    font-family: 'VT323', monospace;
+    font-size: 28px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.receipt-address {
+    font-size: 14px;
+}
+
+.receipt-divider {
+    border-bottom: 1px dashed #999;
+    margin: 15px 0;
+}
+
+.receipt-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 8px 0;
+    font-size: 16px;
+    font-family: 'VT323', monospace;
+}
+
+.receipt-label {
+    color: #444;
+    text-align: left;
+    width: 50%;
+    padding-right: 10px;
+    white-space: nowrap;
+}
+
+.receipt-value {
+    width: 50%;
+    text-align: right;
+    padding-left: 10px;
+}
+
+.receipt-footer {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 12px;
+}
+
+.receipt-barcode {
+    text-align: center;
+    margin: 20px 0;
+    font-family: 'Libre Barcode 128', cursive;
+    font-size: 48px;
+    line-height: 1;
+}
+
+/* Add monospace styling to all text */
+.receipt-container * {
+    font-family: 'VT323', monospace;
+}
+
+.codes-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 20px 0;
+    padding: 0 10px;
+    gap: 20px;
+}
+
+.qr-container {
+    width: 200px;
+    height: 200px;
+}
+
+#qrcode {
+    width: 200px;
+    height: 200px;
+}
+
+#qrcode img {
+    width: 100%;
+    height: 100%;
+}
+
+.barcode-container {
+    width: 100%;
+    text-align: center;
+}
+
+.receipt-barcode {
+    text-align: center;
+    margin: 0;
+    font-family: 'Libre Barcode 128', cursive;
+    font-size: 32px;
+    line-height: 1;
+}
+
+.guid-text {
+    font-size: 10px;
+    color: #666;
+    margin-top: 5px;
+    font-family: monospace;
+}
+
+.referral-text {
+    text-align: center;
+    margin: 0;
+    padding: 0 20px;
+    color: #000;
+}
+
+.referral-text br {
+    margin: 8px 0;
+}
+
+/* Style the first line of referral text */
+.referral-text::first-line {
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.receipt-value a {
+    text-decoration: none;
+    color: #f51324;
+    font-weight: bold;
+    font-size: 18px;
+    position: relative;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin: -4px -8px;
+    border-radius: 4px;
+    background-color: rgba(245, 19, 36, 0.05);
+    border-bottom: 1px dotted rgba(245, 19, 36, 0.5);
+    -webkit-tap-highlight-color: rgba(245, 19, 36, 0.1);
+    transition: background-color 0.2s ease;
+}
+
+/* Mobile touch feedback */
+@media (hover: none) {
+    .receipt-value a:active {
+        background-color: rgba(245, 19, 36, 0.1);
+    }
+}
+
+/* Desktop hover effects */
+@media (hover: hover) {
+    .receipt-value a:hover {
+        background-color: rgba(245, 19, 36, 0.1);
+        opacity: 0.9;
+        text-shadow: 0 0 1px rgba(245, 19, 36, 0.3);
+    }
+
+    .receipt-value a:active {
+        transform: translateY(1px);
+    }
+}
+
+/* Content wrapper for everything after the sticky header */
+.receipt-content {
+    padding: 20px;
+    background: white;
+    position: relative;
+    z-index: 1;
+}
+
+.receipt-value a.never-link {
+    text-decoration: none;
+    color: #f51324;
+    font-weight: bold;
+    font-size: 18px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    margin: -4px -8px;
+    border-radius: 4px;
+    background-color: rgba(245, 19, 36, 0.05);
+    border-bottom: 1px dotted rgba(245, 19, 36, 0.5);
+    -webkit-tap-highlight-color: rgba(245, 19, 36, 0.1);
+    transition: background-color 0.2s ease;
+}
+
+.receipt-value a.never-link::after {
+    content: '';
+    width: 16px;
+    height: 16px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f51324'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    display: inline-block;
+} 

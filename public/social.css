@@ -330,11 +330,11 @@
     min-width: 280px;
     background: white;
     padding: 0;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    _box-shadow: 0 1px 4px rgba(0,0,0,0.05);
     overflow: hidden;
-    border: 2px solid transparent;
+    border: 1px solid #d7d7d7;
     transition: border-color 0.2s ease-in-out;
-    border-radius: 8px;
+    border-radius: 2px;
 }
 
 .place-card[data-expanded="true"] {
@@ -446,8 +446,8 @@
     box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
     transform: translateY(100%);
     transition: transform 0.3s ease-out;
-    z-index: 1002; /* Increased from 1000 */
-    max-height: 80vh;
+    z-index: 1002;
+    max-height: 90vh; /* Increased from 80vh to 90vh */
     overflow-y: auto;
 }
 
@@ -707,13 +707,38 @@ footer {
 
 /* Position the center control */
 .mapboxgl-ctrl-bottom-left {
-    bottom: -8px !important; /* Adjust based on header height */
-    right: 8px !important;
+    display: block !important;  /* Re-enable bottom-left controls */
+    bottom: 8px !important;
+    left: 8px !important;
 }
 
-/* Ensure the control doesn't get hidden behind other elements */
+/* Hide top-left controls */
+.mapboxgl-ctrl-top-left {
+    display: none !important;
+}
+
 .mapboxgl-ctrl-group {
-    z-index: 5;
+    margin: 8px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important;
+    background: rgba(255, 255, 255, 0.9) !important;  /* Slightly transparent background */
+    backdrop-filter: blur(4px);  /* Add blur effect */
+}
+
+/* Style the control buttons */
+.mapboxgl-ctrl button {
+    width: 36px !important;
+    height: 36px !important;
+    padding: 8px !important;
+}
+
+/* Add some spacing between control groups */
+.mapboxgl-ctrl-group + .mapboxgl-ctrl-group {
+    margin-top: 8px !important;
+}
+
+/* Remove left padding from search since controls are no longer there */
+#search-container {
+    padding: 8px 16px;
 }
 
 /* Update styles for the new center icon in search input */
@@ -746,4 +771,45 @@ footer {
 /* Hide the map center control */
 .mapboxgl-ctrl-center {
     display: none !important;
-} 
+}
+
+.bottom-nav {
+    position: relative;
+}
+
+/* Update header profile pic positioning */
+.profile-pic {
+    position: absolute;
+    right: 1rem;
+    top: 60%;  /* Move it down a bit */
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    animation: profileEnter 0.8s cubic-bezier(0.2, 1.8, 0.3, 1);
+}
+
+/* Update animation to work with new positioning */
+@keyframes profileEnter {
+    0% {
+        opacity: 0;
+        transform: translateY(-50%) scale(0.3);
+    }
+    70% {
+        opacity: 1;
+        transform: translateY(-50%) scale(1.1);
+    }
+    85% {
+        transform: translateY(-50%) scale(0.95);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(-50%) scale(1);
+    }
+}
+
+/* Remove the negative margin since we're not overlapping from bottom anymore */
+header .profile-pic {
+    margin-top: 0;
+}

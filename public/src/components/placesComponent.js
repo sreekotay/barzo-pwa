@@ -18,6 +18,21 @@ export default class PlacesComponent {
             ...config
         };
 
+        // Add sheet template
+        this.sheetTemplate = `
+            <div class="place-details-backdrop"></div>
+            <div class="place-details-sheet">
+                <button class="close-button absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                <div class="details">
+                    <!-- Details will be injected here -->
+                </div>
+            </div>
+        `;
+
         this._setupComponent();
     }
 
@@ -493,174 +508,194 @@ export default class PlacesComponent {
     }
 
     async _showPlaceDetails(place) {
-        const container = this._getContainer();
-        if (!container) return;
+        // Create sheet if it doesn't exist - do this first
+        if (!document.querySelector('.place-details-sheet')) {
+            document.body.insertAdjacentHTML('beforeend', this.sheetTemplate);
+        }
 
-        const card = container.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
-        if (!card) return;
+        // Get sheet and details container
+        const sheet = document.querySelector('.place-details-sheet');
+        const detailsDiv = sheet.querySelector('.details');
 
-        try {
-            // Select this card and marker
-            container.querySelectorAll('.place-card').forEach(c => {
-                c.dataset.selected = (c === card).toString();
-            });
-            this._markerManager.selectMarker(place.place_id);
+        // Add close handlers if they don't exist
+        if (!sheet.closeHandlersAdded) {
+            const closeButton = sheet.querySelector('.close-button');
+            const backdrop = document.querySelector('.place-details-backdrop');
             
-            // Scroll card into view with a small delay for smooth transition
-            setTimeout(() => {
-                this._scrollCardIntoView(place.place_id);
-            }, 250);
+            const closeSheet = () => {
+                sheet.classList.remove('active');
+                backdrop.classList.remove('active');
+                
+                // Remove the elements after animation
+                setTimeout(() => {
+                    sheet.parentElement.removeChild(sheet);
+                    backdrop.parentElement.removeChild(backdrop);
+                }, 300);
+            };
 
-            // Fetch place details
-            const response = await fetch('https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search', {
+            [closeButton, backdrop].forEach(el => {
+                el.addEventListener('click', closeSheet);
+            });
+
+            sheet.closeHandlersAdded = true;
+        }
+
+        // Fetch the detailed place data first
+        const details = await this._fetchPlaceDetails(place.place_id);
+        if (!details) {
+            console.error('Failed to fetch place details');
+            return;
+        }
+
+        // Get current day name in lowercase
+        const today = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
+        
+        // Update content
+        detailsDiv.innerHTML = `
+            ${place.photos && place.photos.length > 0 ? `
+                <div class="place-image">
+                    <img 
+                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this._mapService._googleApiKey}"
+                        alt="${place.name}"
+                        loading="lazy"
+                        class="w-full h-48 object-cover"
+                    >
+                </div>
+            ` : ''}
+            
+            <div class="p-4">
+                <div class="types-scroll nowrap mb-1">
+                    ${(place.types || [])
+                        .filter(type => !['point_of_interest', 'establishment'].includes(type))
+                        .map(type => `
+                            <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>
+                        `).join('<span class="text-gray-300 text-xs mx-1">|</span>')}
+                </div>
+                
+                <h2 class="text-xl font-semibold">${place.name}</h2>
+                
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="status ${details.current_opening_hours?.open_now ? 'open' : 'closed'}">
+                        ${details.current_opening_hours?.open_now ? 'OPEN' : 'CLOSED'}
+                    </div>
+                    ${details.price_level ? `
+                        <div class="text-gray-500 text-xs">${'$'.repeat(details.price_level)}</div>
+                    ` : ''}
+                    ${place.formattedDistance ? `
+                        <div class="text-gray-500 text-xs">${place.formattedDistance}</div>
+                    ` : ''}
+                </div>
+
+                <div class="border-t border-gray-200 -mx-4"></div>
+            </div>
+
+            <div class="px-4 pb-4">
+                ${details.editorial_summary?.overview ? `
+                    <div class="text-gray-900 text-sm mb-4">
+                        ${details.editorial_summary.overview}
+                    </div>
+                ` : ''}
+
+                <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div class="font-medium text-gray-400">NEIGHBORHOOD</div>
+                    <div class="text-gray-900">${
+                        details.address_components?.find(c => c.types.includes('neighborhood'))?.long_name || 
+                        'Location not specified'
+                    }</div>
+
+                    <div class="font-medium text-gray-400">ADDRESS</div>
+                    <div class="text-gray-900">${details.vicinity || place.vicinity}</div>
+
+                    <div class="font-medium text-gray-400">STATUS</div>
+                    <div class="text-gray-900">
+                        ${details.current_opening_hours?.open_now ? 
+                            '<span class="text-green-600 font-medium">Open Now</span>' : 
+                            '<span class="text-red-600 font-medium">Closed</span>'
+                        }
+                    </div>
+                    ${details.current_opening_hours?.weekday_text?.map(day => {
+                        const [dayName, hours] = day.split(': ');
+                        return `<div class="text-gray-400 justify-self-end">${dayName.slice(0,3)}</div>
+                                <div class="text-gray-900">${hours}</div>`;
+                    }).join('')}
+
+                    ${place.hours ? `
+                        <div class="font-medium text-gray-400">HOURS</div>
+                        <div class="text-gray-600 space-y-0.5">
+                            ${Object.entries(place.hours).map(([day, ranges]) => {
+                                const timeRanges = ranges?.map(range => {
+                                    const start = range.start.replace(/(\d{2})(\d{2})/, '$1:$2');
+                                    const end = range.end.replace(/(\d{2})(\d{2})/, '$1:$2');
+                                    return `${start}-${end}`;
+                                }).join(', ') || 'Closed';
+                                return `<div class="${day === today ? 'font-medium' : ''}">${day.slice(0,2).toUpperCase()}: ${timeRanges}</div>`;
+                            }).join('')}
+                        </div>
+                    ` : ''}
+
+                    ${details.serves_breakfast || details.serves_lunch || details.serves_dinner ? `
+                        <div class="font-medium text-gray-400">SERVES</div>
+                        <div class="flex flex-wrap gap-1">
+                            ${details.serves_breakfast ? '<span class="text-gray-600">Breakfast</span>' : ''}
+                            ${details.serves_lunch ? '<span class="text-gray-600">Lunch</span>' : ''}
+                            ${details.serves_dinner ? '<span class="text-gray-600">Dinner</span>' : ''}
+                            ${details.serves_brunch ? '<span class="text-gray-600">Brunch</span>' : ''}
+                        </div>
+                    ` : ''}
+
+                    ${details.price_level ? `
+                        <div class="font-medium text-gray-400">PRICE</div>
+                        <div class="text-gray-900">${'$'.repeat(details.price_level)}</div>
+                    ` : ''}
+
+                    ${details?.formatted_phone_number ? `
+                        <div class="font-medium text-gray-400">CONTACT</div>
+                        <div>
+                            <a href="tel:${details.formatted_phone_number}" class="text-blue-600 hover:text-blue-800">
+                                ${details.formatted_phone_number}
+                            </a>
+                        </div>
+                    ` : ''}
+
+                    ${details?.website ? `
+                        <div class="font-medium text-gray-400">WEBSITE</div>
+                        <div>
+                            <a href="${details.website}" target="_blank" class="text-blue-600 hover:text-blue-800">
+                                ${new URL(details.website).hostname}
+                            </a>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+
+        // Now show the sheet with animation after content is loaded
+        requestAnimationFrame(() => {
+            sheet.classList.add('active');
+            document.querySelector('.place-details-backdrop').classList.add('active');
+        });
+    }
+
+    async _fetchPlaceDetails(placeId) {
+        try {
+            const response = await fetch(`https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    placeId: place.place_id
+                body: JSON.stringify({ 
+                    placeId,
+                    key: this._mapService._googleApiKey,
+                    type: 'details'  // Add this to indicate we want details
                 })
             });
-
-            const detailsData = await response.json();
-            const details = detailsData.result;
-
-            if (!details) {
-                throw new Error('No details returned');
-            }
-
-            // Get current day name in lowercase
-            const today = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
             
-            // Show bottom sheet with the same formatted content we had in the expanded card
-            const sheet = document.querySelector('.place-details-sheet');
-            const detailsDiv = sheet.querySelector('.details');
-            
-            detailsDiv.innerHTML = `
-                ${place.photos && place.photos.length > 0 ? `
-                    <div class="place-image">
-                        <img 
-                            src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this._mapService._googleApiKey}"
-                            alt="${place.name}"
-                            loading="lazy"
-                            class="w-full h-48 object-cover"
-                        >
-                    </div>
-                ` : ''}
-                
-                <div class="p-4">
-                    <div class="types-scroll nowrap mb-1">
-                        ${(place.types || [])
-                            .filter(type => !['point_of_interest', 'establishment'].includes(type))
-                            .map(type => `
-                                <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>
-                            `).join('<span class="text-gray-300 text-xs mx-1">|</span>')}
-                    </div>
-                    
-                    <h2 class="text-xl font-semibold">${place.name}</h2>
-                    
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="status ${place.opening_hours?.open_now ? 'open' : 'closed'}">
-                            ${place.opening_hours?.open_now ? 'OPEN' : 'CLOSED'}
-                        </div>
-                        ${place.price_level ? `
-                            <div class="text-gray-500 text-xs">${'$'.repeat(place.price_level)}</div>
-                        ` : ''}
-                        ${place.formattedDistance ? `
-                            <div class="text-gray-500 text-xs">${place.formattedDistance}</div>
-                        ` : ''}
-                    </div>
-
-                    <div class="border-t border-gray-200 -mx-4"></div>
-                </div>
-
-                <div class="px-4 pb-4">
-                    ${details.editorial_summary?.overview ? `
-                        <div class="text-gray-900 text-sm mb-4">
-                            ${details.editorial_summary.overview}
-                        </div>
-                    ` : ''}
-
-                    <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                        <div class="font-medium text-gray-400">NEIGHBORHOOD</div>
-                        <div class="text-gray-900">${
-                            details.address_components?.find(c => c.types.includes('neighborhood'))?.long_name || 
-                            'Location not specified'
-                        }</div>
-
-                        <div class="font-medium text-gray-400">ADDRESS</div>
-                        <div class="text-gray-900">${details.vicinity}</div>
-
-                        <div class="font-medium text-gray-400">STATUS</div>
-                        <div class="text-gray-900">
-                            ${details.current_opening_hours?.open_now ? 
-                                '<span class="text-green-600 font-medium">Open Now</span>' : 
-                                '<span class="text-red-600 font-medium">Closed</span>'
-                            }
-                        </div>
-                        ${details.current_opening_hours?.weekday_text.map(day => {
-                            const [dayName, hours] = day.split(': ');
-                            return `<div class="text-gray-400 justify-self-end">${dayName.slice(0,3)}</div>
-                                    <div class="text-gray-900">${hours}</div>`;
-                        }).join('')}
-
-                        ${place.hours ? `
-                            <div class="font-medium text-gray-400">HOURS</div>
-                            <div class="text-gray-600 space-y-0.5">
-                                ${Object.entries(place.hours).map(([day, ranges]) => {
-                                    const timeRanges = ranges?.map(range => {
-                                        const start = range.start.replace(/(\d{2})(\d{2})/, '$1:$2');
-                                        const end = range.end.replace(/(\d{2})(\d{2})/, '$1:$2');
-                                        return `${start}-${end}`;
-                                    }).join(', ') || 'Closed';
-                                    return `<div class="${day === today ? 'font-medium' : ''}">${day.slice(0,2).toUpperCase()}: ${timeRanges}</div>`;
-                                }).join('')}
-                            </div>
-                        ` : ''}
-
-                        ${details.serves_breakfast || details.serves_lunch || details.serves_dinner ? `
-                            <div class="font-medium text-gray-400">SERVES</div>
-                            <div class="flex flex-wrap gap-1">
-                                ${details.serves_breakfast ? '<span class="text-gray-600">Breakfast</span>' : ''}
-                                ${details.serves_lunch ? '<span class="text-gray-600">Lunch</span>' : ''}
-                                ${details.serves_dinner ? '<span class="text-gray-600">Dinner</span>' : ''}
-                                ${details.serves_brunch ? '<span class="text-gray-600">Brunch</span>' : ''}
-                            </div>
-                        ` : ''}
-
-                        ${details.price_level ? `
-                            <div class="font-medium text-gray-400">PRICE</div>
-                            <div class="text-gray-900">${'$'.repeat(details.price_level)}</div>
-                        ` : ''}
-
-                        ${details?.formatted_phone_number ? `
-                            <div class="font-medium text-gray-400">CONTACT</div>
-                            <div>
-                                <a href="tel:${details.formatted_phone_number}" class="text-blue-600 hover:text-blue-800">
-                                    ${details.formatted_phone_number}
-                                </a>
-                            </div>
-                        ` : ''}
-
-                        ${details?.website ? `
-                            <div class="font-medium text-gray-400">WEBSITE</div>
-                            <div>
-                                <a href="${details.website}" target="_blank" class="text-blue-600 hover:text-blue-800">
-                                    ${new URL(details.website).hostname}
-                                </a>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-
-            // Show the bottom sheet
-            sheet.classList.add('active');
-            document.querySelector('.place-details-backdrop').classList.add('active');
-
+            if (!response.ok) throw new Error('Failed to fetch place details');
+            const data = await response.json();
+            return data.result;
         } catch (error) {
             console.error('Error fetching place details:', error);
-            this._markerManager.selectMarker(null);
+            return null;
         }
     }
 

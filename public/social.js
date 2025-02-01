@@ -4,6 +4,7 @@ locationService.requestGeoLocation();
 import MapService from '/src/services/mapService.js';
 import PlacesComponent from '/src/components/placesComponent.js';
 import EventsComponent from '/src/components/eventsComponent.js';
+import ProfileComponent from './src/components/profileComponent.js';
 
 const mapService = new MapService(locationService, {
     mapContainer: 'map',
@@ -141,25 +142,34 @@ const routes = {
             </div>
         </div>
     `,
-    profile: `
-        <h1 class="text-2xl font-bold mb-2 pt-4 px-2 mx-4">Your Profile</h1>
+    messages: `
+        <h1 class="text-2xl font-bold mb-2 pt-4 px-2 mx-4">Messages</h1>
         <div class="bg-white rounded-lg shadow p-6 mx-4">
             <div class="flex items-center mb-6">
                 <div class="w-20 h-20 bg-gray-200 rounded-full mr-4"></div>
                 <div>
-                    <h2 class="text-xl font-semibold">John Doe</h2>
-                    <p class="text-gray-600">Member since 2024</p>
+                    <h2 class="text-xl font-semibold">Messages</h2>
+                    <p class="text-gray-600">No new messages</p>
                 </div>
             </div>
             <div class="space-y-4">
                 <div class="border-b pb-4">
-                    <h3 class="font-medium">Bio</h3>
-                    <p class="text-gray-600">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
+                    <h3 class="font-medium">Recent</h3>
+                    <p class="text-gray-600">Your messages will appear here.</p>
                 </div>
-                <div class="border-b pb-4">
-                    <h3 class="font-medium">Stats</h3>
-                    <p class="text-gray-600">Posts: 42 | Friends: 156 | Likes: 320</p>
-                </div>
+            </div>
+        </div>
+    `,
+    profile: `
+        <div class="place-details-backdrop"></div>
+        <div class="place-details-sheet">
+            <button class="close-button absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <div id="profile-content">
+                <!-- ProfileComponent will inject content here -->
             </div>
         </div>
     `,
@@ -193,29 +203,83 @@ const routes = {
     `
 };
 
-// Move popstate handler outside of router
-window.addEventListener('popstate', (event) => {
-    const route = window.location.hash.slice(1) || 'home';
-    
-    // Update UI for the new route
-    updateActiveTab(route);
-    
-    // Update content and reset components
-    handleRouteChange(route);
-});
-
 function handleRouteChange(route) {
     const mainContent = document.querySelector('#main-content');
     
-    // Update content
-    mainContent.innerHTML = routes[route] || routes.home;
-    mainContent.className = 'relative z-20';
-    
-    // Reset components if we're on home route
-    if (route === 'home') {
-        [window.placesComponent, window.entertainmentComponent].forEach(component => {
-            if (component) component.reset();
+    if (route === 'profile') {
+        // Don't clear main content for profile route
+        document.body.insertAdjacentHTML('beforeend', routes[route]);
+        
+        // Add close handlers immediately
+        const closeButton = document.querySelector('.place-details-sheet .close-button');
+        const backdrop = document.querySelector('.place-details-backdrop');
+        
+        const closeProfile = () => {
+            const sheet = document.querySelector('.place-details-sheet');
+            const backdrop = document.querySelector('.place-details-backdrop');
+            sheet.classList.remove('active');
+            backdrop.classList.remove('active');
+            
+            // Remove the elements after animation
+            setTimeout(() => {
+                sheet.parentElement.removeChild(sheet);
+                backdrop.parentElement.removeChild(backdrop);
+                window.location.hash = 'home';
+            }, 300);
+        };
+
+        [closeButton, backdrop].forEach(el => {
+            el.addEventListener('click', closeProfile);
         });
+
+        // Create new instance of ProfileComponent
+        const profileComponent = new ProfileComponent();
+        
+        // Set up one-time event listener for this profile view
+        const dataLoadedHandler = async (event) => {
+            console.log('Caught profileDataLoaded event');
+            const sheet = document.querySelector('.place-details-sheet');
+            const backdrop = document.querySelector('.place-details-backdrop');
+            const profileContent = document.querySelector('#profile-content');
+            
+            if (profileContent && sheet) {
+                console.log('Updating profile UI');
+                // Update content first
+                await event.detail.component.updateProfileUI();
+                
+                // Then animate after content is loaded
+                requestAnimationFrame(() => {
+                    sheet.classList.add('active');
+                    backdrop.classList.add('active');
+                });
+            }
+            document.removeEventListener('profileDataLoaded', dataLoadedHandler);
+        };
+        document.addEventListener('profileDataLoaded', dataLoadedHandler);
+
+    } else {
+        // Remove any existing profile sheets
+        const existingSheet = document.querySelector('.place-details-sheet');
+        const existingBackdrop = document.querySelector('.place-details-backdrop');
+        if (existingSheet) existingSheet.parentElement.removeChild(existingSheet);
+        if (existingBackdrop) existingBackdrop.parentElement.removeChild(existingBackdrop);
+        
+        // Only update content if it's empty or we're switching to a different route
+        if (!mainContent.children.length || !mainContent.querySelector(`[data-route="${route}"]`)) {
+            mainContent.innerHTML = routes[route] || routes.home;
+            
+            // Add data-route attribute to identify the current route's content
+            const content = mainContent.firstElementChild;
+            if (content) {
+                content.setAttribute('data-route', route);
+            }
+        }
+        mainContent.className = 'relative z-20';
+    }
+    
+    // Reset components if we're on home route and components don't exist
+    if (route === 'home' && !window.placesComponent) {
+        initializeHomeComponents();
     }
 }
 
@@ -532,6 +596,9 @@ export function initialize() {
             mapService.centerOnCurrentLocation();
         });
     }
+
+    // Initialize header profile component only
+    window.profileComponent = new ProfileComponent();
 }
 
 export function updateLocation() {
@@ -544,3 +611,16 @@ function updateActiveTab(route) {
         tab.classList.toggle('active', tab.dataset.route === route);
     });
 }
+
+// Update the navigation links in the HTML
+document.querySelectorAll('a[href="#profile"]').forEach(link => {
+    link.setAttribute('href', '#messages');
+});
+
+// Add a new messages link to the navigation
+const navLists = document.querySelectorAll('nav ul');
+navLists.forEach(ul => {
+    const messagesLink = document.createElement('li');
+    messagesLink.innerHTML = '<a href="#messages" class="block text-gray-600 hover:text-red-500">Messages</a>';
+    ul.insertBefore(messagesLink, ul.querySelector('a[href="#settings"]').parentElement);
+});
