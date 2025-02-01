@@ -42,7 +42,7 @@ class MapService {
         googleApiKey, 
         searchInput, 
         searchInputLevel, 
-        initialZoom = 13, 
+        initialZoom = 14, 
         nearbyPlaces = false,
         placesEndpoint = 'supabase',
         onAutocompleteSelect,

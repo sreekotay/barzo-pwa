@@ -10,8 +10,7 @@ const mapService = new MapService(locationService, {
     accessToken: 'pk.eyJ1Ijoic3JlZWJhcnpvIiwiYSI6ImNtNXdwOHl1aDAwaGgyam9vbHdjYnIyazQifQ.StZ77F8-5g43kq29k2OLaw',
     googleApiKey: 'AIzaSyDy1nNu0vLAHvnSJHPVVHPmPuJmlq3NSlo',
     searchInput: 'search-container',
-    searchInputLevel: 'neighborhood',
-    initialZoom: 13
+    searchInputLevel: 'neighborhood'
 });
 
 mapService.initialize();
