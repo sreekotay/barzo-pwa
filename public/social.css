@@ -72,9 +72,10 @@
     position: sticky;
     top: 0;
     width: 100%;
-    background: white;
     padding: 0 16px;
     z-index: 998;
+    background: #333333;
+    color: white;
     position: relative; /* Ensure relative positioning for absolute children */
 }
 
@@ -98,6 +99,7 @@
     _box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
     font-size: 14px !important;
     outline: none !important;
+    background: none !important;
 }
 
 .google-places-input:focus {
@@ -711,15 +713,15 @@ footer {
 /* Update styles for the new center icon in search input */
 .center-icon {
     position: absolute;
-    right: 16px; /* Move it closer to the right edge */
+    right: 16px;
     top: 50%;
     transform: translateY(-50%);
     width: 20px;
     height: 20px;
-    color: #f51324; /* Barzo red */
+    color: #f51324;
     cursor: pointer;
-    display: block !important; /* Always show for debugging */
-    z-index: 10; /* Increase z-index to ensure visibility */
+    display: none; /* Hidden by default */
+    z-index: 10;
     background: none;
     border: none;
     padding: 0;

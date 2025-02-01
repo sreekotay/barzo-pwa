@@ -101,6 +101,43 @@ class MapService {
         this._placesLoadCallbacks = [];
 
         this._pendingSearch = null; // Will store {place, moveComplete, searchText}
+
+        // Add property to track manual mode
+        this._isManualMode = false;
+
+        // Subscribe to map location updates
+        this._mapLocationUnsubscribe = this._locationService.onMapLocationChange(
+            async (mapLocation) => {
+                // Update marker
+                this._updateMapMarker(mapLocation);
+                
+                // Compare map location with user location
+                const userLocation = this._locationService.getUserLocation();
+                const centerButton = document.getElementById('center-button');
+                if (centerButton) {
+                    if (userLocation && mapLocation) {
+                        const isManual = Math.abs(mapLocation.lat - userLocation.lat) > 0.0001 || 
+                                       Math.abs(mapLocation.lng - userLocation.lng) > 0.0001;
+                        centerButton.style.display = isManual ? 'block' : 'none';
+                        this._isManualMode = isManual;
+                    } else {
+                        centerButton.style.display = 'none';
+                        this._isManualMode = false;
+                    }
+                }
+
+                // Handle reverse geocoding
+                await this._reverseGeocode(mapLocation);
+                if (this._searchInput && this._currentPlace && 
+                    (!this._lastAutocompletePlace || !this._locationService.isManualMode())) {
+                    this.updateSearchText(this._getSearchDisplayText(this._currentPlace));
+                }
+            },
+            { 
+                realtime: true,
+                debounceMs: 100
+            }
+        );
     }
 
     /**
@@ -205,39 +242,13 @@ class MapService {
             // Only fly to location if:
             // 1. We started with default location (no cached location)
             // 2. We're not in manual map mode
-            if (!cachedLocation && !this._isManualMap && location) {
+            if (!cachedLocation && !this._isManualMode && location) {
                 this._map.flyTo({
                     center: [location.lng, location.lat],
                     zoom: this._initialZoom
                 });
             }
         });
-
-        // Subscribe to map location updates for marker
-        this._mapLocationUnsubscribe = this._locationService.onMapLocationChange(
-            (location) => {
-                this._updateMapMarker(location);
-            },
-            { 
-                realtime: true,    // Use realtime updates for marker
-                debounceMs: 0      // No debouncing for marker
-            }
-        );
-
-        // Subscribe to map location updates for reverse geocoding
-        this._locationService.onMapLocationChange(
-            async (location) => {
-                await this._reverseGeocode(location);
-                if (this._searchInput && this._currentPlace && 
-                    (!this._lastAutocompletePlace || !this._locationService.isManualMode())) {
-                    this.updateSearchText(this._getSearchDisplayText(this._currentPlace));
-                }
-            },
-            {
-                realtime: false,
-                debounceMs: 1000
-            }
-        );
 
         // Subscribe to map location updates for nearby places
         if (this._nearbyPlaces) {
@@ -262,7 +273,7 @@ class MapService {
             this._updateMapMarker(cachedLocation);
             // Set initial map location in service
             this._locationService.setMapLocation(cachedLocation);
-            this._isManualMap = false; // this is KEY - but this block is bogus
+            this._isManualMode = false; // this is KEY - but this block is bogus
         }
         /**/
 
