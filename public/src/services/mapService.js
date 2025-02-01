@@ -118,7 +118,7 @@ class MapService {
         mapboxgl.accessToken = this._accessToken;
         this._map = new mapboxgl.Map({
             container: this._mapContainer,
-            style: 'mapbox://styles/mapbox/streets-v12',
+            style: 'mapbox://styles/mapbox/light-v10',
             zoom: this._initialZoom,
             center: [initialCenter.lng, initialCenter.lat],
             attributionControl: false,
@@ -147,8 +147,20 @@ class MapService {
 
         // Add custom center button
         const centerButton = document.createElement('button');
-        centerButton.className = 'mapboxgl-ctrl-icon mapboxgl-ctrl-geolocate';
+        centerButton.className = 'mapboxgl-ctrl-icon mapboxgl-ctrl-center';
         centerButton.setAttribute('aria-label', 'Center map on your location');
+        centerButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="8"></circle>
+                <line x1="12" y1="2" x2="12" y2="4"></line>
+                <line x1="12" y1="20" x2="12" y2="22"></line>
+                <line x1="2" y1="12" x2="4" y2="12"></line>
+                <line x1="20" y1="12" x2="22" y2="12"></line>
+                <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+        `;
+
+        // Add back the click handler
         centerButton.addEventListener('click', () => {
             this._locationService.resetMapLocation();
             const location = this._locationService.getMapLocation();
@@ -167,7 +179,7 @@ class MapService {
         this._map.addControl({
             onAdd: () => container,
             onRemove: () => container.remove()
-        });
+        }, 'bottom-left');
 
         // Initialize user marker (green dot)
         const userMarkerElement = document.createElement('div');
@@ -339,8 +351,38 @@ class MapService {
      * @private
      */
     async _initializeSearch() {
+        // Create search container first
+        const searchContainer = document.getElementById(this._searchInput);
+        searchContainer.className = 'search-container';
+
+        // Add search icon
+        const searchIcon = document.createElement('div');
+        searchIcon.className = 'search-icon';
+        searchIcon.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        `;
+        searchContainer.appendChild(searchIcon);
+
+        // Create search input
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Where do you want to go?';
+        searchInput.className = 'google-places-input';
+        
+        // Add focus handler to select all text
+        searchInput.addEventListener('focus', function() {
+            setTimeout(() => {
+                this.setSelectionRange(0, this.value.length);
+            }, 0);
+        });
+        
+        searchContainer.appendChild(searchInput);
+
+        // Initialize appropriate search provider
         if (this._googleApiKey) {
-            await this._initializeGoogleSearch();
+            await this._initializeGoogleSearch(searchInput);
         } else {
             await this._initializeMapboxSearch();
         }
@@ -350,25 +392,9 @@ class MapService {
      * Initialize Google Places search
      * @private
      */
-    async _initializeGoogleSearch() {
+    async _initializeGoogleSearch(searchInput) {
         await this._loadGooglePlaces();
         
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.placeholder = 'Where do you want to go?';
-        searchInput.className = 'google-places-input';
-        
-        // Add focus handler to select all text
-        searchInput.addEventListener('focus', function() {
-            // Use setTimeout to ensure this runs after the browser's default focus behavior
-            setTimeout(() => {
-                this.setSelectionRange(0, this.value.length);
-            }, 0);
-        });
-        
-        const searchContainer = document.getElementById(this._searchInput);
-        searchContainer.appendChild(searchInput);
-
         const autocomplete = new google.maps.places.Autocomplete(searchInput, {
             types: ['establishment', 'geocode'],
             componentRestrictions: { country: 'us' },
@@ -379,7 +405,6 @@ class MapService {
             const place = autocomplete.getPlace();
             if (!place.geometry) return;
 
-            const searchInput = document.querySelector(`#${this._searchInput} input`);
             const location = {
                 lat: place.geometry.location.lat(),
                 lng: place.geometry.location.lng()
@@ -409,14 +434,12 @@ class MapService {
                 searchText: searchInput.value
             };
 
-
             // Move map
             this._map.flyTo({
                 center: [place.geometry.location.lng(), place.geometry.location.lat()],
                 zoom: this._initialZoom
             });
         });
-
     }
 
     /**

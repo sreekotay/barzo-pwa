@@ -40,8 +40,10 @@
 
 /* Mapbox Geocoder Customization */
 .mapboxgl-ctrl-geocoder input[type='text'] {
-    font-size: 14px !important;   /* Ensure input text is also smaller */
-    height: 36px !important;      /* Slightly reduce height to match font */
+    padding-left: 36px !important; /* Make room for icon */
+    width: 100% !important;
+    font-size: 14px !important;
+    height: 36px !important;
 }
 
 .mapboxgl-ctrl-geocoder .suggestions {
@@ -65,30 +67,102 @@
     display: none !important;
 }
 
-.mapboxgl-ctrl-geocoder,
-.google-places-input {
-    min-width: calc(75vw) !important;  /* Make the input wider */
-    max-width: 400px !important;  /* Make the input wider */
+/* Autocomplete & Search Styles */
+.search-container {
+    position: relative;
+    width: 100%;
+    background: white;
+    padding: 0 16px;
 }
 
-/* Google Places Input Styling */
+.search-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    color: #f51324; /* Barzo red */
+    z-index: 1;
+}
+
 .google-places-input {
+    width: calc(75vw) !important;
+    padding: 8px 12px 8px 24px !important;
+    _border: 1px solid #E5E7EB !important;
+    border-radius: 8px !important;
+    _box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
     font-size: 14px !important;
-    height: 36px !important;
-    padding: 6px 12px !important;
-    border: 1px solid #ccc !important;
-    border-radius: 4px !important;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    outline: none !important;
 }
 
+.google-places-input:focus {
+    border-color: #3B82F6 !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Google Places Autocomplete Dropdown */
 .pac-container {
+    margin-top: 4px !important;
     font-size: 13px !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
+    border: none !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 
+                0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+    background: white !important;
 }
 
 .pac-item {
-    padding: 6px 10px !important;
+    padding: 8px 12px !important;
     cursor: pointer !important;
+    border-top: 1px solid #E5E7EB !important;
+}
+
+.pac-item:first-child {
+    border-top: none !important;
+}
+
+.pac-item:hover {
+    background-color: #F3F4F6 !important;
+}
+
+.pac-item-selected {
+    background-color: #F3F4F6 !important;
+}
+
+/* Hide Mapbox's default search icon */
+.mapboxgl-ctrl-geocoder--icon {
+    display: none !important;
+}
+
+/* Update styles for the center button */
+.mapboxgl-ctrl-center {
+    background: none !important;
+    border: none;
+    padding: 0 !important;  /* Remove padding */
+    width: 30px !important;  /* Set fixed width */
+    height: 30px !important; /* Set fixed height */
+    cursor: pointer;
+    color: #666;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: relative;  /* For absolute positioning of SVG */
+}
+
+.mapboxgl-ctrl-center:hover {
+    color: #000;
+    background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+.mapboxgl-ctrl-center svg {
+    width: 20px;
+    height: 20px;
+    position: absolute;  /* Position absolutely */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);  /* Perfect centering */
 }
 
 /* Add pulse animation */
@@ -228,6 +302,7 @@
     display: flex;
     overflow-x: auto;
     gap: 12px;
+    _scroll-snap-align: start;
     _scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
@@ -246,7 +321,6 @@
     background: white;
     padding: 0;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    scroll-snap-align: start;
     overflow: hidden;
     border: 2px solid transparent;
     transition: border-color 0.2s ease-in-out;
@@ -462,14 +536,34 @@
 
 #map-resize-handle {
     width: 100%;
-    height: 4px;
-    background: #C41752;  /* Darker red */
+    height: 8px;  /* Make handle taller */
+    background: #F3F4F6;  /* Light gray background */
     cursor: ns-resize;
     border: none;
+    position: relative;
+    transition: background-color 0.2s ease;
 }
 
 #map-resize-handle:hover {
-    background: #A31344;  /* Even darker on hover */
+    background: #E5E7EB;  /* Slightly darker on hover */
+}
+
+/* Add visual indicator in the middle */
+#map-resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 4px;
+    background: #9CA3AF;  /* Gray indicator */
+    border-radius: 2px;
+    transition: background-color 0.2s ease;
+}
+
+#map-resize-handle:hover::after {
+    background: #6B7280;  /* Darker indicator on hover */
 }
 
 /* Remove any absolute positioning for .poi-toggle */
@@ -569,4 +663,44 @@
     background: white;
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Add sticky header styles */
+.header-container {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    background: white;
+    padding: 8px 0;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+}
+
+/* Ensure main content has room for sticky header */
+#main-content {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom)); /* Account for bottom bar + safe area */
+}
+
+/* Update header styles */
+header {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Update footer to not conflict with header */
+footer {
+    margin-bottom: 60px; /* Match header height */
+}
+
+/* Position the center control */
+.mapboxgl-ctrl-bottom-left {
+    bottom: -8px !important; /* Adjust based on header height */
+    right: 8px !important;
+}
+
+/* Ensure the control doesn't get hidden behind other elements */
+.mapboxgl-ctrl-group {
+    z-index: 5;
 } 

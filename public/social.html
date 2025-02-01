@@ -50,7 +50,6 @@
     <div style="position: relative;">
         <div id="map"></div>
         <div id="map-resize-handle"></div>
-        <div id="search-container" style="position: absolute; top: 10px; left: 10px;"></div>
     </div>
 
     <!-- Overlay for mobile menu -->
@@ -73,17 +72,7 @@
 
         <!-- Main Content Area - shared between mobile and desktop -->
         <div class="flex-1 flex flex-col" style="max-width: 100vw;">
-            <!-- Mobile header - hidden on desktop -->
-            <header class="lg:hidden w-full bg-red-500 shadow-sm">
-                <div class="px-4 py-4 flex items-center justify-between">
-                    <div class="text-2xl font-bold text-white">Barzo</div>
-                    <button id="hamburger-menu" class="hamburger flex flex-col justify-center items-center w-6 h-6">
-                        <span class="hamburger-line w-6 h-0.5 bg-white mb-1.5"></span>
-                        <span class="hamburger-line w-6 h-0.5 bg-white mb-1.5"></span>
-                        <span class="hamburger-line w-6 h-0.5 bg-white"></span>
-                    </button>
-                </div>
-            </header>
+            <div id="search-container"></div>
 
             <!-- Single Main Content Area -->
             <main class="flex-grow container mx-auto">
@@ -100,6 +89,20 @@
                     </div>
                 </div>
             </footer>
+
+            <!-- Mobile header - hidden on desktop -->
+            <header class="lg:hidden fixed bottom-0 left-0 right-0 bg-red-500 shadow-lg z-50">
+                <div class="px-4 py-3 flex items-left gap-4">
+                    <button id="hamburger-menu" class="hamburger flex flex-col justify-center items-center w-6 h-6">
+                        <span class="hamburger-line w-6 h-0.5 bg-white mb-1.5"></span>
+                        <span class="hamburger-line w-6 h-0.5 bg-white mb-1.5"></span>
+                        <span class="hamburger-line w-6 h-0.5 bg-white"></span>
+                    </button>
+                    <div class="text-l font-bold text-white">BARZO</div>
+                    <div class="w-6"></div> <!-- Spacer for symmetry -->
+                </div>
+            </header>
+            
         </div>
     </div>
 
