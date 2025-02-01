@@ -118,6 +118,14 @@
         // Modify the existing getUserInfo function to include provisioning
         async function getUserInfo() {
             const userInfo = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}`);
+            // ----------------
+            // other examples
+            // ----------------
+            //const userInfo = await apiCall('POST', `/v1/users/all`, {page:1, limit:300});
+            //const userInfo = await apiCall('POST', `/v1/users/all`, {page:1, limit:300});
+            //const userInfo = await apiCall('POST', `/v1/venues/all`, {page:1, limit:300});
+            //const userInfo = await apiCall('GET', `v1/feeds/fyp?latitude=27.964157&longitude=-82.452606&radiusInFeet=30000&userId=${globalAuthToken.token.identity.userId}`);
+            //const userInfo = await apiCall('GET', `v1/feeds/places/events?latitude=27.964157&longitude=-82.452606&radiusInFeet=300000&userId=${globalAuthToken.token.identity.userId}`);
             await provisionSupabaseUser(); // Add user provisioning
             console.log(JSON.stringify(userInfo, null, 2));
             return userInfo;

@@ -54,23 +54,13 @@ export default class MarkerManager {
     _createMarker(place) {
         const el = document.createElement('div');
         el.className = 'place-marker';
-        el.style.width = '16px';
-        el.style.height = '16px';
-        el.style.borderRadius = '50%';
-        el.style.backgroundColor = place.opening_hours?.open_now ? 
-            this._currentColors.open : 
-            this._currentColors.closed;
-        el.style.border = '2px solid white';
-        el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
-        el.style.cursor = 'pointer';
-
-        // Add pulse effect for open places
-        if (place.opening_hours?.open_now) {
-            const pulse = document.createElement('div');
-            pulse.className = 'pulse';
-            pulse.style.backgroundColor = this._currentColors.pulse;
-            el.appendChild(pulse);
-        }
+        
+        // Add CSS variable for pulse color
+        el.style.setProperty('--pulse-color', this._currentColors.pulse);
+        
+        // Set initial color based on open/closed status
+        const isOpen = place.opening_hours?.open_now;
+        el.style.backgroundColor = isOpen ? this._currentColors.open : this._currentColors.closed;
 
         const marker = new mapboxgl.Marker({
             element: el
@@ -104,15 +94,11 @@ export default class MarkerManager {
 
     _updateMarkerStyle(marker, place) {
         const el = marker.getElement();
-        el.style.backgroundColor = place.opening_hours?.open_now ? 
-            this._currentColors.open : 
-            this._currentColors.closed;
+        const isOpen = place.opening_hours?.open_now;
         
-        // Update pulse color if it exists
-        const pulse = el.querySelector('.pulse');
-        if (pulse) {
-            pulse.style.backgroundColor = this._currentColors.pulse;
-        }
+        // Always use closed color for closed venues, but keep pulse color consistent
+        el.style.backgroundColor = isOpen ? this._currentColors.open : this._currentColors.closed;
+        el.style.setProperty('--pulse-color', this._currentColors.pulse);
         
         marker.placeData = place; // Update stored place data
     }
@@ -124,10 +110,14 @@ export default class MarkerManager {
             const el = marker.getElement();
             if (el) {
                 el.classList.toggle('selected', marker.placeId === placeId);
-                // Set the pulse color when selected
+                
+                // When selected, maintain open/closed color state
                 if (marker.placeId === placeId) {
+                    const isOpen = marker.placeData.opening_hours?.open_now;
+                    el.style.backgroundColor = isOpen ? 
+                        this._currentColors.open : 
+                        this._currentColors.closed;
                     el.style.setProperty('--pulse-color', this._currentColors.pulse);
-                    el.style.background = this._currentColors.pulse;
                 }
             }
         });

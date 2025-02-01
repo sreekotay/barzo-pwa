@@ -112,6 +112,9 @@
     height: 12px;
     cursor: pointer;
     position: relative;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 0 4px rgba(0,0,0,0.3);
 }
 
 .place-marker.selected {
@@ -126,7 +129,7 @@
     transform: translate(-50%, -50%);
     width: 16px;
     height: 16px;
-    background: inherit;  /* This will inherit the pulse color from the parent */
+    background: var(--pulse-color);
     border-radius: 50%;
     animation: markerPulse 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
 }
