@@ -138,6 +138,19 @@ class MapService {
                 debounceMs: 100
             }
         );
+
+        // Subscribe to user location changes
+        this._userLocationUnsubscribe = this._locationService.onUserLocationChange(
+            (userLocation) => {
+                if (userLocation) {
+                    this._updateUserMarker(userLocation);
+                }
+            },
+            { 
+                realtime: true,
+                debounceMs: 0  // No debounce for user location updates
+            }
+        );
     }
 
     /**
@@ -582,6 +595,9 @@ class MapService {
         }
         if (this._mapLocationUnsubscribe) {
             this._mapLocationUnsubscribe();
+        }
+        if (this._userLocationUnsubscribe) {
+            this._userLocationUnsubscribe();
         }
         if (this._map) {
             this._map.remove();
