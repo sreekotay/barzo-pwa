@@ -168,7 +168,7 @@ class MapService {
         mapboxgl.accessToken = this._accessToken;
         this._map = new mapboxgl.Map({
             container: this._mapContainer,
-            style: 'mapbox://styles/mapbox/light-v10',
+            style: 'mapbox://styles/mapbox/dark-v10',
             zoom: this._initialZoom,
             center: [initialCenter.lng, initialCenter.lat],
             attributionControl: false,
