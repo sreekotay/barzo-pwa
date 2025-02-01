@@ -475,34 +475,37 @@ export default class PlacesComponent {
         const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
         if (!card) return;
 
-        // Toggle expanded state
+        // Check if this card was expanded before we do anything
         const wasExpanded = card.dataset.expanded === 'true';
         
-        // Always unexpand all cards first
-        document.querySelectorAll('.place-card').forEach(c => {
-            c.dataset.expanded = 'false';
-            c.dataset.selected = 'false';  // Unselect all cards
-            c.style.transition = 'width 0.2s ease-in-out';
-            c.style.width = '240px';
-            c.style.flexShrink = '1';
-            
-            const detailsDiv = c.querySelector('.place-details');
-            if (detailsDiv) {
-                detailsDiv.style.opacity = '0';
-                detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
-                setTimeout(() => {
-                    detailsDiv.remove();
-                }, 200);
-            }
-        });
-
-        // If the card was expanded, we're done - just unselect the marker and return
+        // If this card was expanded, close all cards and return
         if (wasExpanded) {
+            document.querySelectorAll('.place-card').forEach(c => {
+                c.dataset.expanded = 'false';
+                c.dataset.selected = 'false';
+                c.style.transition = 'width 0.2s ease-in-out';
+                c.style.width = '240px';
+                c.style.flexShrink = '1';
+                
+                const detailsDiv = c.querySelector('.place-details');
+                if (detailsDiv) {
+                    detailsDiv.style.opacity = '0';
+                    detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
+                    setTimeout(() => {
+                        detailsDiv.remove();
+                    }, 200);
+                }
+            });
             this._mapService.selectMarker(null);
+            
+            // Add delay before scrolling to ensure smooth transition
+            setTimeout(() => {
+                this._scrollCardIntoView(place.place_id);
+            }, 250);
+            
             return;
         }
 
-        // If we get here, we're expanding a new card
         try {
             // Select this card and marker
             card.dataset.selected = 'true';
