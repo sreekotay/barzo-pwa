@@ -475,43 +475,19 @@ export default class PlacesComponent {
         const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
         if (!card) return;
 
-        // Check if this card was expanded before we do anything
-        const wasExpanded = card.dataset.expanded === 'true';
-        
-        // If this card was expanded, close all cards and return
-        if (wasExpanded) {
+        try {
+            // Select this card and marker
             document.querySelectorAll('.place-card').forEach(c => {
-                c.dataset.expanded = 'false';
-                c.dataset.selected = 'false';
-                c.style.transition = 'width 0.2s ease-in-out';
-                c.style.width = '240px';
-                c.style.flexShrink = '1';
-                
-                const detailsDiv = c.querySelector('.place-details');
-                if (detailsDiv) {
-                    detailsDiv.style.opacity = '0';
-                    detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
-                    setTimeout(() => {
-                        detailsDiv.remove();
-                    }, 200);
-                }
+                c.dataset.selected = (c === card).toString();
             });
-            this._mapService.selectMarker(null);
+            this._mapService.selectMarker(place.place_id);
             
-            // Add delay before scrolling to ensure smooth transition
+            // Scroll card into view with a small delay for smooth transition
             setTimeout(() => {
                 this._scrollCardIntoView(place.place_id);
             }, 250);
-            
-            return;
-        }
 
-        try {
-            // Select this card and marker
-            card.dataset.selected = 'true';
-            this._mapService.selectMarker(place.place_id);
-            
-            // Fetch additional place details using Supabase function
+            // Fetch place details
             const response = await fetch('https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search', {
                 method: 'POST',
                 headers: {
@@ -529,23 +505,54 @@ export default class PlacesComponent {
                 throw new Error('No details returned');
             }
 
-            // Expand card width with transition
-            card.style.transition = 'width 0.2s ease-in-out';
-            card.style.width = '320px';
-            card.style.flexShrink = '0';
-            card.dataset.expanded = 'true';
-
             // Get current day name in lowercase
             const today = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
             
-            // Create details section
-            const detailsDiv = document.createElement('div');
-            detailsDiv.className = 'place-details border-t border-gray-200 mt-2';
+            // Show bottom sheet with the same formatted content we had in the expanded card
+            const sheet = document.querySelector('.place-details-sheet');
+            const detailsDiv = sheet.querySelector('.details');
             
             detailsDiv.innerHTML = `
-                <div class="p-2">
+                ${place.photos && place.photos.length > 0 ? `
+                    <div class="place-image">
+                        <img 
+                            src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this._mapService._googleApiKey}"
+                            alt="${place.name}"
+                            loading="lazy"
+                            class="w-full h-48 object-cover"
+                        >
+                    </div>
+                ` : ''}
+                
+                <div class="p-4">
+                    <div class="types-scroll nowrap mb-1">
+                        ${(place.types || [])
+                            .filter(type => !['point_of_interest', 'establishment'].includes(type))
+                            .map(type => `
+                                <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>
+                            `).join('<span class="text-gray-300 text-xs mx-1">|</span>')}
+                    </div>
+                    
+                    <h2 class="text-xl font-semibold">${place.name}</h2>
+                    
+                    <div class="flex items-center gap-2 mb-4">
+                        <div class="status ${place.opening_hours?.open_now ? 'open' : 'closed'}">
+                            ${place.opening_hours?.open_now ? 'OPEN' : 'CLOSED'}
+                        </div>
+                        ${place.price_level ? `
+                            <div class="text-gray-500 text-xs">${'$'.repeat(place.price_level)}</div>
+                        ` : ''}
+                        ${place.formattedDistance ? `
+                            <div class="text-gray-500 text-xs">${place.formattedDistance}</div>
+                        ` : ''}
+                    </div>
+
+                    <div class="border-t border-gray-200 -mx-4"></div>
+                </div>
+
+                <div class="px-4 pb-4">
                     ${details.editorial_summary?.overview ? `
-                        <div class="text-gray-900 text-xs mb-3">
+                        <div class="text-gray-900 text-sm mb-4">
                             ${details.editorial_summary.overview}
                         </div>
                     ` : ''}
@@ -623,37 +630,13 @@ export default class PlacesComponent {
                 </div>
             `;
 
-            // Add transition for details appearance
-            detailsDiv.style.opacity = '0';
-            detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
-            
-            // Append details to card
-            card.querySelector('.flex-1').appendChild(detailsDiv);
-            
-            // Trigger reflow and fade in
-            requestAnimationFrame(() => {
-                detailsDiv.style.opacity = '1';
-            });
+            // Show the bottom sheet
+            sheet.classList.add('active');
+            document.querySelector('.place-details-backdrop').classList.add('active');
 
         } catch (error) {
             console.error('Error fetching place details:', error);
-            // Unexpand all cards on error too
-            document.querySelectorAll('.place-card').forEach(c => {
-                c.dataset.expanded = 'false';
-                c.dataset.selected = 'false';  // Unselect all cards
-                c.style.transition = 'width 0.2s ease-in-out';
-                c.style.width = '240px';
-                c.style.flexShrink = '1';
-                const detailsDiv = c.querySelector('.place-details');
-                if (detailsDiv) {
-                    detailsDiv.style.opacity = '0';
-                    detailsDiv.style.transition = 'opacity 0.2s ease-in-out';
-                    setTimeout(() => {
-                        detailsDiv.remove();
-                    }, 200);
-                }
-            });
-            this._mapService.selectMarker(null);  // Unselect marker on error
+            this._mapService.selectMarker(null);
         }
     }
 } 
