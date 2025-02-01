@@ -1077,34 +1077,15 @@ class MapService {
     _setupMapMoveHandler() {
         this._map.on('moveend', () => {
             if (this._lastAutocompletePlace) {
-                // Try to find matching place in current places
-                const matchingPlace = this._findMatchingPlace(this._lastAutocompletePlace);
-                if (matchingPlace) {
-                    // Notify callbacks with special flag
-                    this._notifyCallbacks([matchingPlace], {
-                        event: 'place_match',
-                        source: 'autocomplete',
-                        shouldHighlight: true
-                    });
-                }
+                // Notify callbacks with special flag
+                this._notifyCallbacks([], {
+                    event: 'place_match',
+                    source: 'autocomplete',
+                    shouldHighlight: true
+                });
                 this._lastAutocompletePlace.nextTime = true; //clear it on next places update - settle's the races
                 this._lastAutocompletePlace = null;
             }
-        });
-    }
-
-    _findMatchingPlace(searchPlace) {
-        if (!searchPlace) return null;
-        
-        // Find in current places
-        return this._currentPlaces.find(place => {
-            const nameMatch = place.name.toLowerCase() === searchPlace.name.toLowerCase();
-            const locationMatch = this._isNearby(
-                place.geometry.location,
-                searchPlace.location,
-                50 // meters threshold
-            );
-            return nameMatch && locationMatch;
         });
     }
 

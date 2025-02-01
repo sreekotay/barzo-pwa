@@ -95,14 +95,14 @@
 @keyframes markerPulse {
     0% {
         transform: translate(-50%, -50%) scale(1);
-        opacity: 0.8;
+        opacity: 1;
     }
     50% {
-        transform: translate(-50%, -50%) scale(2);
+        transform: translate(-50%, -50%) scale(3);
         opacity: 0;
     }
     100% {
-        transform: translate(-50%, -50%) scale(2);
+        transform: translate(-50%, -50%) scale(3);
         opacity: 0;
     }
 }
