@@ -518,6 +518,20 @@ export function initialize() {
     });
 
     initMapResize();
+
+    // When entering manual mode
+    mapService.setManualMode(true);
+
+    // When exiting manual mode
+    mapService.setManualMode(false);
+
+    // Add center button handler
+    const centerButton = document.getElementById('center-button');
+    if (centerButton) {
+        centerButton.addEventListener('click', () => {
+            mapService.centerOnCurrentLocation();
+        });
+    }
 }
 
 export function updateLocation() {

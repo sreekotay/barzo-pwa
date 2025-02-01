@@ -1162,6 +1162,24 @@ class MapService {
             this._pendingSearch = null;
         }
     }
+
+    // Add method to toggle center icon visibility
+    setManualMode(isManual) {
+        if (this._centerIcon) {
+            this._centerIcon.classList.toggle('visible', isManual);
+        }
+    }
+
+    centerOnCurrentLocation() {
+        this._locationService.resetMapLocation();
+        const location = this._locationService.getMapLocation();
+        if (location) {
+            this._map.flyTo({
+                center: [location.lng, location.lat],
+                zoom: this._initialZoom
+            });
+        }
+    }
 }
 
 export default MapService; 

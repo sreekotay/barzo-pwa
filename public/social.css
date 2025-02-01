@@ -69,10 +69,13 @@
 
 /* Autocomplete & Search Styles */
 .search-container {
-    position: relative;
+    position: sticky;
+    top: 0;
     width: 100%;
     background: white;
     padding: 0 16px;
+    z-index: 998;
+    position: relative; /* Ensure relative positioning for absolute children */
 }
 
 .search-icon {
@@ -703,4 +706,36 @@ footer {
 /* Ensure the control doesn't get hidden behind other elements */
 .mapboxgl-ctrl-group {
     z-index: 5;
+}
+
+/* Update styles for the new center icon in search input */
+.center-icon {
+    position: absolute;
+    right: 16px; /* Move it closer to the right edge */
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    color: #f51324; /* Barzo red */
+    cursor: pointer;
+    display: block !important; /* Always show for debugging */
+    z-index: 10; /* Increase z-index to ensure visibility */
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+/* Remove the .visible class styles since we're showing it always */
+.center-icon.visible {
+    display: block;
+}
+
+/* Add hover effect */
+.center-icon:hover {
+    opacity: 0.8;
+}
+
+/* Hide the map center control */
+.mapboxgl-ctrl-center {
+    display: none !important;
 } 
