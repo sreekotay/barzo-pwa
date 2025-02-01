@@ -74,9 +74,8 @@
     width: 100%;
     padding: 0 16px;
     z-index: 998;
-    background: #333333;
+    background: #222;
     color: white;
-    position: relative; /* Ensure relative positioning for absolute children */
 }
 
 .search-icon {
