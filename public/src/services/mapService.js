@@ -146,10 +146,7 @@ class MapService {
                     this._updateUserMarker(userLocation);
                 }
             },
-            { 
-                realtime: true,
-                debounceMs: 0  // No debounce for user location updates
-            }
+            16  // Just pass the debounceMs number directly
         );
     }
 
