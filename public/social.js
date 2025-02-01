@@ -300,11 +300,64 @@ function initializeBottomSheet() {
     `;
     document.body.appendChild(sheetContainer);
     
-    // Setup close handlers
     const sheet = sheetContainer.querySelector('.place-details-sheet');
     const backdrop = sheetContainer.querySelector('.place-details-backdrop');
     const closeButton = sheet.querySelector('.close-button');
     
+    // Add swipe handling
+    let touchStart = null;
+    let currentTranslate = 0;
+    
+    sheet.addEventListener('touchstart', (e) => {
+        touchStart = e.touches[0].clientY;
+        sheet.style.transition = 'none';
+    }, { passive: true });
+    
+    sheet.addEventListener('touchmove', (e) => {
+        if (touchStart === null) return;
+        
+        const currentTouch = e.touches[0].clientY;
+        const diff = currentTouch - touchStart;
+        
+        // Only allow downward swipe
+        if (diff < 0) return;
+        
+        currentTranslate = diff;
+        sheet.style.transform = `translateY(${diff}px)`;
+        
+        // Fade backdrop based on swipe progress
+        const opacity = Math.max(0, 1 - (diff / sheet.offsetHeight));
+        backdrop.style.opacity = opacity;
+        
+    }, { passive: true });
+    
+    sheet.addEventListener('touchend', (e) => {
+        if (touchStart === null) return;
+        
+        sheet.style.transition = 'transform 0.3s ease-out';
+        backdrop.style.transition = 'opacity 0.3s ease-out';
+        
+        // If swiped down more than 30% of sheet height, dismiss
+        if (currentTranslate > sheet.offsetHeight * 0.3) {
+            sheet.style.transform = `translateY(${sheet.offsetHeight}px)`;
+            backdrop.style.opacity = '0';
+            setTimeout(() => {
+                sheet.style.transform = '';
+                sheet.classList.remove('active');
+                backdrop.classList.remove('active');
+                backdrop.style.opacity = '';
+            }, 300);
+        } else {
+            // Reset position
+            sheet.style.transform = '';
+            backdrop.style.opacity = '';
+        }
+        
+        touchStart = null;
+        currentTranslate = 0;
+    });
+
+    // Setup close handlers
     [backdrop, closeButton].forEach(el => {
         el.addEventListener('click', () => {
             sheet.classList.remove('active');
