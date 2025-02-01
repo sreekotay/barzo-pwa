@@ -1,8 +1,12 @@
+import MarkerManager from '../services/markerManager.js';
+import CarouselComponent from './carouselComponent.js';
+
 export default class PlacesComponent {
-    constructor(mapService, locationService) {
+    constructor(mapService, locationService, container, config = {}) {
         this._mapService = mapService;
         this._locationService = locationService;
-        this._container = document.querySelector('#places-container');
+        this._markerManager = new MarkerManager(mapService);
+        this._container = container;
         console.log('📦 Places container found:', this._container);
         this._currentPlaces = [];
         this._currentIntersectionObserver = null;
@@ -13,6 +17,23 @@ export default class PlacesComponent {
         this._nearbyPlaces = 30;
         this._placesEndpoint = 'supabase';
 
+        // Configuration with defaults
+        this._config = {
+            placeTypes: ['bar'],  // Default type
+            maxResults: 30,       // Default max results
+            endpoint: 'supabase', // Default endpoint
+            markerColors: {
+                open: '#E31C5F',    // Default open marker color
+                closed: '#9CA3AF',  // Default closed marker color
+                pulse: '#E31C5F'    // Default pulse color
+            },
+            ...config            // Override with provided config
+        };
+
+        if (!this._container) {
+            throw new Error('Container element is required for PlacesComponent');
+        }
+
         // Bind methods
         this.updatePlaces = this.updatePlaces.bind(this);
         this._handleMarkerClick = this._handleMarkerClick.bind(this);
@@ -20,7 +41,7 @@ export default class PlacesComponent {
 
         // Set up listeners
         this._mapService.onPlacesChange(this.updatePlaces);
-        this._mapService.onMarkerClick(this._handleMarkerClick);
+        this._markerManager.onMarkerClick(this._handleMarkerClick);
         this._locationService.onMapLocationChange(
             this._handleLocationChange,
             {
@@ -28,6 +49,8 @@ export default class PlacesComponent {
                 debounceMs: 1000
             }
         );
+
+        this._carousel = new CarouselComponent(container);
     }
 
     async _handleLocationChange(location) {
@@ -43,14 +66,14 @@ export default class PlacesComponent {
             
             let endpoint, requestBody;
             
-            if (this._placesEndpoint === 'cloudflare') {
+            if (this._config.endpoint === 'cloudflare') {
                 endpoint = 'https://nearby-places-worker.sree-35c.workers.dev';
                 requestBody = {
                     latitude: location.lat,
                     longitude: location.lng,
                     radius: radius,
-                    types: ['restaurant', 'cafe', 'bar'],
-                    maxResults: this._nearbyPlaces
+                    types: this._config.placeTypes,
+                    maxResults: this._config.maxResults
                 };
             } else {
                 endpoint = 'https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search';
@@ -58,7 +81,7 @@ export default class PlacesComponent {
                     latitude: location.lat,
                     longitude: location.lng,
                     radius: radius,
-                    types: ['bar']
+                    types: this._config.placeTypes
                 };
             }
             
@@ -75,7 +98,7 @@ export default class PlacesComponent {
             if (data.results) {
                 const userLocation = this._locationService.getUserLocationCached();
                 const places = this._processPlacesData(data.results, userLocation);
-                this._mapService.updateMarkers(places);
+                this._markerManager.updateMarkers(places, this._config.markerColors);
                 this._updatePlacesContent(places);
             }
         } catch (error) {
@@ -156,37 +179,33 @@ export default class PlacesComponent {
 
     updatePlaces(places, config = {}) {
         console.log('📦 Places update from:', config.event, config.source);
-        if (config.location) this._fetchNearbyPlaces(config.location);
+        if (config.location) {
+            this._fetchNearbyPlaces(config.location);
+        } else {
+            this._markerManager.updateMarkers(places, this._config.markerColors);
+            this._updatePlacesContent(places);
+        }
     }
 
-    // Split out the content update logic
     _updatePlacesContent(places) {
-        this._container = document.querySelector('#places-container');
         console.log('📦 Updating places container:', this._container, 'with', places?.length, 'places');
 
-        if (!this._container) {
-            console.log('No places container found');
-            return;
+        // Remove any existing no-places message if it exists
+        const existingNoPlaces = this._container.querySelector('.no-places-message');
+        if (existingNoPlaces) {
+            existingNoPlaces.parentElement.remove();
         }
 
         if (!places || places.length === 0) {
             console.log('No places data received');
-            this._container.style.height = '0';
-            this._container.innerHTML = '<p>No places found nearby</p>';
+            this._carousel.showEmptyMessage('No places found nearby');
             return;
         }
 
         this._currentPlaces = places;
 
         // Get or create places-scroll container
-        let placesScroll = this._container.querySelector('.places-scroll');
-        if (!placesScroll) {
-            console.log('📍 Creating new places-scroll container');
-            placesScroll = document.createElement('div');
-            placesScroll.className = 'places-scroll pb-2';
-            placesScroll.innerHTML = '<div class="w-1" style="flex-shrink: 0;"></div>';
-            this._container.appendChild(placesScroll);
-        }
+        let placesScroll = this._carousel.getOrCreateScrollContainer();
 
         // Get existing cards and create a map of placeId -> card
         const existingCards = new Map();
@@ -211,14 +230,21 @@ export default class PlacesComponent {
 
         // Update observers and event handlers
         this._setupCardObserversAndHandlers(placesScroll);
+
+        if (places?.length > 0) {
+            this._carousel.expand();
+        }
     }
 
     _createPlaceCard(place) {
         const card = document.createElement('div');
         card.className = 'place-card';
         card.dataset.placeId = place.place_id;
-        card.style.flexShrink = '1';
+        card.dataset.selected = 'false';
         
+        // Add custom property for highlight color
+        card.style.setProperty('--highlight-color', this._config.markerColors.open);
+
         // Create the basic structure
         card.innerHTML = `
             ${place.photos && place.photos.length > 0 ? `
@@ -247,6 +273,9 @@ export default class PlacesComponent {
     }
 
     _updatePlaceCard(card, place) {
+        // Add custom property for highlight color
+        card.style.setProperty('--highlight-color', this._config.markerColors.open);
+
         // Update photo if it exists
         const existingImage = card.querySelector('.place-image img');
         if (place.photos && place.photos.length > 0) {
@@ -303,62 +332,24 @@ export default class PlacesComponent {
     }
 
     _scrollCardIntoView(placeId) {
-        const card = document.querySelector(`.place-card[data-place-id="${placeId}"]`);
-        const scrollContainer = document.querySelector('.places-scroll');
-        if (!card || !scrollContainer) return;
-
-        console.log('🔄 Starting programmatic scroll');
-        
-        this._isProgrammaticScroll = true;
-        this._isTransitioning = true;
-        this._lastScrollTime = Date.now();
-        
-        scrollContainer.scrollTo({
-            behavior: 'smooth',
-            left: card.getBoundingClientRect().left - 16 + scrollContainer.scrollLeft,
-        });
-        
-        const checkScrollEnd = () => {
-            const currentScroll = scrollContainer.scrollLeft;
-            
-            setTimeout(() => {
-                if (currentScroll === scrollContainer.scrollLeft) {
-                    console.log('🔄 Ending programmatic scroll');
-                    this._isProgrammaticScroll = false;
-                    
-                    setTimeout(() => {
-                        this._isTransitioning = false;
-                    }, 500);
-                } else {
-                    checkScrollEnd();
-                }
-            }, 50);
-        };
-        
-        checkScrollEnd();
+        this._carousel.scrollCardIntoView(placeId);
     }
 
     _handleMarkerClick(place) {
-        if (this._isUpdating) return;
         this._isUpdating = true;
 
-        // Disconnect observer before any changes
         if (this._currentIntersectionObserver) {
             this._currentIntersectionObserver.disconnect();
         }
 
-        // Update card borders and scroll
-        document.querySelectorAll('.place-card').forEach(card => {
-            card.dataset.selected = (card.dataset.placeId === place.place_id).toString();
-        });
+        this._carousel.selectCard(place.place_id);
 
         this._scrollCardIntoView(place.place_id);
-        this._mapService.selectMarker(place.place_id);
+        this._markerManager.selectMarker(place.place_id);
 
-        // Re-observe after a delay
         setTimeout(() => {
             if (this._currentIntersectionObserver) {
-                document.querySelectorAll('.place-card').forEach(card => {
+                this._container.querySelectorAll('.place-card').forEach(card => {
                     this._currentIntersectionObserver.observe(card);
                 });
             }
@@ -367,71 +358,25 @@ export default class PlacesComponent {
     }
 
     _setupCardObserversAndHandlers(placesScroll) {
-        // Cleanup any existing observer
-        if (this._currentIntersectionObserver) {
-            this._currentIntersectionObserver.disconnect();
-        }
-
-        // Only use intersection observer on mobile
-        const isMobile = window.innerWidth < 1024;
-        
-        if (isMobile) {
-            // Create new observer for mobile
-            const observer = new IntersectionObserver(
-                (entries) => {
-                    if (this._isProgrammaticScroll || this._isTransitioning) return;
-                    const now = Date.now();
-                    if (now - this._lastScrollTime < 2000) return;
-
-                    let maxRatio = 0;
-                    let mostVisibleCard = null;
-
-                    entries.forEach(entry => {
-                        if (entry.intersectionRatio > maxRatio) {
-                            maxRatio = entry.intersectionRatio;
-                            mostVisibleCard = entry.target;
-                        }
-                    });
-
-                    if (mostVisibleCard && maxRatio > 0.5) {
-                        const placeId = mostVisibleCard.dataset.placeId;
-                        
-                        this._isUpdating = true;
-                        document.querySelectorAll('.place-card').forEach(card => {
-                            card.dataset.selected = (card.dataset.placeId === placeId).toString();
-                        });
-                        this._mapService.selectMarker(placeId);
-                        this._isUpdating = false;
-                    }
-                },
-                {
-                    root: placesScroll,
-                    threshold: [0, 0.25, 0.5, 0.75, 1],
-                    rootMargin: '-10% 0px -10% 0px'
-                }
-            );
-
-            // Observe cards for mobile
-            placesScroll.querySelectorAll('.place-card').forEach(card => {
-                observer.observe(card);
-            });
-
-            this._currentIntersectionObserver = observer;
-        }
+        const observer = this._carousel.setupIntersectionObserver((mostVisibleCard) => {
+            const placeId = mostVisibleCard.dataset.placeId;
+            this._isUpdating = true;
+            this._carousel.selectCard(placeId);
+            this._markerManager.selectMarker(placeId);
+            this._isUpdating = false;
+        });
 
         // Add click and hover handlers to cards
         placesScroll.querySelectorAll('.place-card').forEach(card => {
             // Add hover handlers for desktop
-            if (!isMobile) {
+            if (!this._carousel.isMobile()) {
                 card.addEventListener('mouseenter', () => {
                     if (this._isUpdating) return;
                     this._isUpdating = true;
                     
                     const placeId = card.dataset.placeId;
-                    document.querySelectorAll('.place-card').forEach(c => {
-                        c.dataset.selected = (c.dataset.placeId === placeId).toString();
-                    });
-                    this._mapService.selectMarker(placeId);
+                    this._carousel.selectCard(placeId);
+                    this._markerManager.selectMarker(placeId);
                     
                     this._isUpdating = false;
                 });
@@ -441,10 +386,8 @@ export default class PlacesComponent {
                     if (this._isUpdating) return;
                     this._isUpdating = true;
                     
-                    document.querySelectorAll('.place-card').forEach(c => {
-                        c.dataset.selected = "false";
-                    });
-                    this._mapService.selectMarker(null);
+                    this._carousel.clearSelection();
+                    this._markerManager.selectMarker(null);
                     
                     this._isUpdating = false;
                 });
@@ -457,7 +400,7 @@ export default class PlacesComponent {
                 
                 const placeId = card.dataset.placeId;
                 console.log('🎯 Card clicked:', placeId);
-                this._mapService.selectMarker(placeId);
+                this._markerManager.selectMarker(placeId);
                 
                 this._scrollCardIntoView(placeId);
                 
@@ -472,15 +415,15 @@ export default class PlacesComponent {
     }
 
     async _showPlaceDetails(place) {
-        const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
+        const card = this._container.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
         if (!card) return;
 
         try {
             // Select this card and marker
-            document.querySelectorAll('.place-card').forEach(c => {
+            this._container.querySelectorAll('.place-card').forEach(c => {
                 c.dataset.selected = (c === card).toString();
             });
-            this._mapService.selectMarker(place.place_id);
+            this._markerManager.selectMarker(place.place_id);
             
             // Scroll card into view with a small delay for smooth transition
             setTimeout(() => {
@@ -636,7 +579,21 @@ export default class PlacesComponent {
 
         } catch (error) {
             console.error('Error fetching place details:', error);
-            this._mapService.selectMarker(null);
+            this._markerManager.selectMarker(null);
+        }
+    }
+
+    // Add method to update configuration
+    updateConfig(newConfig) {
+        this._config = {
+            ...this._config,
+            ...newConfig
+        };
+        
+        // Refetch places with new config if we have a location
+        const location = this._locationService.getMapLocation();
+        if (location) {
+            this._fetchNearbyPlaces(location);
         }
     }
 } 

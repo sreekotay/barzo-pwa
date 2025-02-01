@@ -97,19 +97,34 @@ function initializeMobileMenu() {
 const routes = {
     home: `
         <div class="pt-4">
-            <div id="places-container"></div>
-            <div class="flex px-4 mb-2">
+            <!-- First row - Bars & Restaurants -->
+            <div class="flex px-4 mb-2 items-center">
+                <h3 class="text-sm font-medium text-gray-500">Bars & Clubs</h3>
+                <div class="w-2 h-2 rounded-full bg-red-600 ml-2"></div>
+            </div>
+
+            <div id="places-container" class="mb-4"></div>
+          <!-- <div class="flex px-4 mb-2">
                 <div class="poi-toggle bg-white rounded-lg shadow">
                     <div class="flex">
                         <button class="px-4 py-2 rounded-l-lg bg-red-600 text-white" data-type="venues">
                             Venues
-                        </button>
+                        </button>   
                         <button class="px-4 py-2 rounded-r-lg text-gray-700" data-type="events">
                             Events
                         </button>
                     </div>
                 </div>
+            </div> -->
+
+            <!-- Second row - Entertainment -->
+            <div class="flex px-4 mb-2 items-center">
+                <h3 class="text-sm font-medium text-gray-500">Restaurants & Cafés</h3>
+                <div class="w-2 h-2 rounded-full bg-blue-500 ml-2"></div>
             </div>
+            <div id="entertainment-container" class="mb-4"></div>
+
+            <!-- Rest of the content -->
             <h1 class="text-2xl font-bold mb-2 mx-4">Welcome to Barzo</h1>
             <div class="bg-white rounded-lg shadow mx-4 p-6">
                 <h2 class="text-xl font-semibold mb-4">Latest Updates</h2>
@@ -178,7 +193,7 @@ const routes = {
     `
 };
 
-// Modify router to handle places container
+// Modify router to handle both components
 function router() {
     console.log('Router called, path:', window.location.hash);
     const mainContent = document.querySelector('#main-content');
@@ -189,37 +204,82 @@ function router() {
     mainContent.innerHTML = content;
     console.log('Content updated for main-content');
 
-    // Initialize places component when on home route
+    // Initialize components when on home route
     if (path === 'home') {
-        if (!window.placesComponent) {
-            console.log('📦 Creating places component');
-            window.placesComponent = new PlacesComponent(mapService, locationService);
+        // Initialize venues component
+        const placesContainer = document.querySelector('#places-container');
+        if (!window.placesComponent && placesContainer) {
+            console.log('📦 Creating venues component');
+            window.placesComponent = new PlacesComponent(
+                mapService, 
+                locationService, 
+                placesContainer,
+                {
+                    placeTypes: ['bar', 'night_club'],
+                    maxResults: 30,
+                    endpoint: 'supabase',
+                    markerColors: {
+                        open: '#DC2626',    // Red (red-600)
+                        closed: '#9CA3AF',
+                        pulse: '#DC2626'
+                    }
+                }
+            );
         }
-        if (!window.eventsComponent) {
-            console.log('🎫 Creating events component');
-            window.eventsComponent = new EventsComponent(mapService, locationService);
+
+        // Initialize entertainment component
+        const entertainmentContainer = document.querySelector('#entertainment-container');
+        if (!window.entertainmentComponent && entertainmentContainer) {
+            console.log('🎭 Creating entertainment component');
+            window.entertainmentComponent = new PlacesComponent(
+                mapService, 
+                locationService, 
+                entertainmentContainer,
+                {
+                    placeTypes: ['restaurant', 'cafe'],
+                    maxResults: 20,
+                    endpoint: 'supabase',
+                    markerColors: {
+                        open: '#3B82F6',    // Blue (blue-500)
+                        closed: '#9CA3AF',
+                        pulse: '#3B82F6'
+                    }
+                }
+            );
         }
+
+        // Update existing places if available
         if (currentPlaces.length > 0) {
-            console.log('📦 Updating places with existing data');
+            console.log('📦 Updating venues with existing data');
             window.placesComponent.updatePlaces(currentPlaces);
         }
-    }
 
-    // Add toggle handlers
-    const toggleContainer = document.querySelector('.poi-toggle');
-    if (toggleContainer) {
-        toggleContainer.querySelectorAll('button').forEach(button => {
-            button.addEventListener('click', () => {
-                currentPOIType = button.dataset.type;
-                placesComponent.updatePOIs();
-                // Update button styles
-                toggleContainer.querySelectorAll('button').forEach(b => {
-                    b.classList.toggle('bg-red-600', b.dataset.type === currentPOIType);
-                    b.classList.toggle('text-white', b.dataset.type === currentPOIType);
-                    b.classList.toggle('text-gray-700', b.dataset.type !== currentPOIType);
+        // Handle POI toggle for venues
+        const toggleContainer = document.querySelector('.poi-toggle');
+        if (toggleContainer) {
+            toggleContainer.querySelectorAll('button').forEach(button => {
+                button.addEventListener('click', () => {
+                    currentPOIType = button.dataset.type;
+                    
+                    if (currentPOIType === 'venues') {
+                        window.placesComponent.updateConfig({
+                            placeTypes: ['bar', 'restaurant', 'cafe']
+                        });
+                    } else if (currentPOIType === 'events') {
+                        window.placesComponent.updateConfig({
+                            placeTypes: ['night_club', 'event_venue']
+                        });
+                    }
+                    
+                    // Update button styles
+                    toggleContainer.querySelectorAll('button').forEach(b => {
+                        b.classList.toggle('bg-red-600', b.dataset.type === currentPOIType);
+                        b.classList.toggle('text-white', b.dataset.type === currentPOIType);
+                        b.classList.toggle('text-gray-700', b.dataset.type !== currentPOIType);
+                    });
                 });
             });
-        });
+        }
     }
 }
 
