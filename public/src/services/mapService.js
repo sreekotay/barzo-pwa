@@ -246,7 +246,7 @@ class MapService {
 
         // Initialize map marker (red pin)
         this._mapMarker = new mapboxgl.Marker({
-            color: '#FF0000'
+            color: '#00DD00'
         });
 
         // Subscribe to user location changes to handle initial location
