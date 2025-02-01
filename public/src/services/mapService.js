@@ -91,10 +91,19 @@ class MapService {
 
         this._onAutocompleteSelect = onAutocompleteSelect;
         this._onMapDrag = onMapDrag;
-        this._isManualFromAutocomplete = false;  // Add new flag
+        this._isManualFromAutocomplete = false;
+        this._lastAutocompletePlace = null;
 
         /** @type {Function[]} */
         this._mapReadyCallbacks = [];
+
+        this._autocompletePlaceCallbacks = [];
+
+        this._placesLoadCallbacks = [];
+
+        this._pendingSearchPlace = null;
+
+        this._lastSearchText = null;  // Added for manual search text storage
     }
 
     /**
@@ -376,40 +385,43 @@ class MapService {
             const place = autocomplete.getPlace();
             if (!place.geometry) return;
 
-            const location = {
-                lng: place.geometry.location.lng(),
-                lat: place.geometry.location.lat()
+            const searchPlace = {
+                name: place.name,
+                location: {
+                    lat: place.geometry.location.lat(),
+                    lng: place.geometry.location.lng()
+                },
+                formatted_address: place.formatted_address
             };
 
-            // Set flags when selecting from autocomplete
+            console.log('🔍 Autocomplete place selected:', searchPlace);
+            
+            // Store both the search info and a promise for the move completion
+            this._pendingSearchPlace = {
+                place: searchPlace,
+                moveComplete: new Promise(resolve => {
+                    this._map.once('moveend', resolve);
+                })
+            };
+
             this._isManualFromAutocomplete = true;
-            this._locationService.setManualMode(true);  // Use proper method
+            this._lastSearchText = place.formatted_address;
 
-            if (this._onAutocompleteSelect) {
-                this._onAutocompleteSelect();
-            }
-
-            // Update map marker and view
-            this._mapMarker.setLngLat([location.lng, location.lat]).addTo(this._map);
+            // Move map
             this._map.flyTo({
-                center: [location.lng, location.lat],
+                center: [searchPlace.location.lng, searchPlace.location.lat],
                 zoom: this._initialZoom
-            });
-
-            // Store place data and update location service
-            this._currentPlace = this._convertGooglePlace(place);
-            this._locationService.setMapLocation(location);
-
-            this._notifyCallbacks([place], {
-                event: 'place_selected',
-                source: 'autocomplete'
             });
         });
 
-        // Update the dragstart handler to clear both flags
-        this._map.on('dragstart', () => {
-            this._isManualFromAutocomplete = false;
-            // Don't clear _isManualMap here as we want to stay in manual mode when dragging
+        // Update search text only if not from autocomplete
+        this._map.on('moveend', () => {
+            if (!this._isManualFromAutocomplete) {
+                this.updateSearchText(this._getAddressFromLocation());
+            } else {
+                // Keep the manual search text
+                this.updateSearchText(this._lastSearchText);
+            }
         });
     }
 
@@ -764,7 +776,7 @@ class MapService {
         
         try {
             const radius = this._calculateRadius() * 2 / 3;
-            console.log('Fetching places for location:', location, 'radius:', radius);
+            //console.log('Fetching places for location:', location, 'radius:', radius);
             
             let endpoint, requestBody;
             
@@ -1058,6 +1070,108 @@ class MapService {
             callback();
         } else {
             this._mapReadyCallbacks.push(callback);
+        }
+    }
+
+    // Add method to handle autocomplete selection
+    handleAutocompleteSelection(place) {
+        this._isManualFromAutocomplete = true;
+        this._lastAutocompletePlace = {
+            name: place.name,
+            location: place.geometry?.location,
+            vicinity: place.formatted_address
+        };
+    }
+
+    // Update map move handler
+    _setupMapMoveHandler() {
+        this._map.on('moveend', () => {
+            if (this._isManualFromAutocomplete) {
+                // Try to find matching place in current places
+                const matchingPlace = this._findMatchingPlace(this._lastAutocompletePlace);
+                if (matchingPlace) {
+                    // Notify callbacks with special flag
+                    this._notifyCallbacks([matchingPlace], {
+                        event: 'place_match',
+                        source: 'autocomplete',
+                        shouldHighlight: true
+                    });
+                }
+                this._isManualFromAutocomplete = false;
+                this._lastAutocompletePlace = null;
+            } else {
+                // Normal moveend handling
+                // ...
+            }
+        });
+    }
+
+    _findMatchingPlace(searchPlace) {
+        if (!searchPlace) return null;
+        
+        // Find in current places
+        return this._currentPlaces.find(place => {
+            const nameMatch = place.name.toLowerCase() === searchPlace.name.toLowerCase();
+            const locationMatch = this._isNearby(
+                place.geometry.location,
+                searchPlace.location,
+                50 // meters threshold
+            );
+            return nameMatch && locationMatch;
+        });
+    }
+
+    _isNearby(loc1, loc2, threshold) {
+        const R = 6371e3; // Earth's radius in meters
+        const lat1 = loc1.lat * Math.PI/180;
+        const lat2 = loc2.lat * Math.PI/180;
+        const dlat = (loc2.lat - loc1.lat) * Math.PI/180;
+        const dlon = (loc2.lng - loc1.lng) * Math.PI/180;
+
+        const a = Math.sin(dlat/2) * Math.sin(dlat/2) +
+                Math.cos(lat1) * Math.cos(lat2) *
+                Math.sin(dlon/2) * Math.sin(dlon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const d = R * c;
+
+        return d <= threshold;
+    }
+
+    onAutocompletePlaceMatch(callback) {
+        this._autocompletePlaceCallbacks.push(callback);
+    }
+
+    // Generic method to notify when places are loaded
+    onPlacesLoad(callback) {
+        this._placesLoadCallbacks.push(callback);
+    }
+
+    // Add method to check for pending search
+    async onPlacesUpdate(places) {
+        if (this._pendingSearchPlace) {
+            console.log('📍 Checking pending search against new places');
+            
+            // Wait for move to complete
+            await this._pendingSearchPlace.moveComplete;
+            
+            const matchingPlace = places.find(place => {
+                const nameMatch = place.name.toLowerCase() === this._pendingSearchPlace.place.name.toLowerCase();
+                const locationMatch = this._isNearby(
+                    place.geometry.location,
+                    this._pendingSearchPlace.place.location,
+                    50
+                );
+                return nameMatch && locationMatch;
+            });
+
+            if (matchingPlace) {
+                console.log('🎯 Found matching place:', matchingPlace.name);
+                this._placesLoadCallbacks.forEach(callback => {
+                    callback(this._pendingSearchPlace.place, 'autocomplete');
+                });
+            }
+            
+            this._pendingSearchPlace = null;
         }
     }
 }

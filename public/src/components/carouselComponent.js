@@ -45,7 +45,7 @@ export default class CarouselComponent {
     getOrCreateScrollContainer() {
         let scrollContainer = this._container.querySelector(`.${this._config.scrollClassName}`);
         if (!scrollContainer) {
-            console.log('📍 Creating new scroll container');
+            //console.log('📍 Creating new scroll container');
             scrollContainer = document.createElement('div');
             scrollContainer.className = `${this._config.scrollClassName} pb-2`;
             scrollContainer.innerHTML = '<div class="w-1" style="flex-shrink: 0;"></div>';

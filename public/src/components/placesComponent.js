@@ -55,6 +55,24 @@ export default class PlacesComponent {
             }
         );
 
+        // Listen for autocomplete matches
+        this._mapService.onAutocompletePlaceMatch((place) => {
+            this._handleMarkerClick(place);
+        });
+
+        // Listen for places loads
+        this._mapService.onPlacesLoad((searchPlace, source) => {
+            console.log('📥 Received places load event:', { searchPlace, source });
+            if (source === 'autocomplete' && this._currentPlaces.length > 0) {
+                console.log('🔎 Current places:', this._currentPlaces.length);
+                const matchingPlace = this._findMatchingPlace(searchPlace);
+                console.log('🎯 Matching place found:', matchingPlace?.name);
+                if (matchingPlace) {
+                    this._handleMarkerClick(matchingPlace);
+                }
+            }
+        });
+
         // Wait for map to be ready before initial fetch
         if (this._mapService.isMapReady()) {
             const location = this._locationService.getMapLocation();
@@ -105,10 +123,10 @@ export default class PlacesComponent {
     }
 
     async _fetchNearbyPlaces(location) {
-        console.log('🌍 Fetching nearby places for location:', location);
+        //console.log('🌍 Fetching nearby places for location:', location);
         try {
             const radius = this._calculateRadius() * 2 / 3;
-            console.log('Fetching places for location:', location, 'radius:', radius);
+            //console.log('Fetching places for location:', location, 'radius:', radius);
             
             let endpoint, requestBody;
             
@@ -237,7 +255,7 @@ export default class PlacesComponent {
     updatePlaces(places, config = {}) {
         if (!this._getContainer()) return;
         
-        console.log('📦 Places update from:', config.event, config.source);
+        //console.log('📦 Places update from:', config.event, config.source);
         if (config.location) {
             this._fetchNearbyPlaces(config.location);
         } else {
@@ -285,6 +303,9 @@ export default class PlacesComponent {
         if (places?.length > 0) {
             this._carousel.expand();
         }
+
+        // After UI is updated, notify map service
+        this._mapService.onPlacesUpdate(places);
     }
 
     _createPlaceCard(place) {
@@ -655,5 +676,27 @@ export default class PlacesComponent {
         if (location) {
             this._fetchNearbyPlaces(location);
         }
+    }
+
+    _findMatchingPlace(searchPlace) {
+        return this._currentPlaces.find(place => {
+            const nameMatch = place.name.toLowerCase() === searchPlace.name.toLowerCase();
+            const locationMatch = this._isNearby(
+                place.geometry.location,
+                searchPlace.location,
+                50 // meters threshold
+            );
+            return nameMatch && locationMatch;
+        });
+    }
+
+    _isNearby(placeLocation, searchLocation, threshold) {
+        const distance = this._calculateDistance(
+            placeLocation.lat,
+            placeLocation.lng,
+            searchLocation.lat,
+            searchLocation.lng
+        );
+        return distance <= threshold;
     }
 } 
