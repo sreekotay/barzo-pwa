@@ -1,6 +1,6 @@
 .receipt-container {
     font-family: 'VT323', monospace;
-    background: white;
+    background: #f2f5f9;
     padding: 0;
     width: 100%;
     max-width: 400px;
@@ -9,6 +9,9 @@
     line-height: 1.3;
     font-size: 16px;
     position: relative;
+    margin: 8px 16px;
+    box-shadow: 4px 14px 20px 6px rgba(0, 0, 0, 0.45);
+    transform: rotate(1deg) translate(-15px, 0);
 }
 
 .receipt-images {
@@ -55,9 +58,9 @@
 .receipt-header {
     top: 200px;
     z-index: 10;
-    background: white;
     padding: 60px 20px 15px;
     margin: 0;
+    font-size: 24px;
 }
 
 .receipt-logo {
@@ -79,7 +82,7 @@
 .receipt-row {
     display: flex;
     justify-content: space-between;
-    margin: 8px 0;
+    margin: 4px 0;
     font-size: 16px;
     font-family: 'VT323', monospace;
 }
@@ -217,7 +220,6 @@
 /* Content wrapper for everything after the sticky header */
 .receipt-content {
     padding: 20px;
-    background: white;
     position: relative;
     z-index: 1;
 }

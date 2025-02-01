@@ -508,19 +508,23 @@ export default class PlacesComponent {
     }
 
     async _showPlaceDetails(place) {
-        // Create sheet if it doesn't exist - do this first
-        if (!document.querySelector('.place-details-sheet')) {
-            document.body.insertAdjacentHTML('beforeend', this.sheetTemplate);
-        }
+        // Remove any existing sheets first
+        const existingSheet = document.querySelector('.place-details-sheet');
+        const existingBackdrop = document.querySelector('.place-details-backdrop');
+        if (existingSheet) existingSheet.parentElement.removeChild(existingSheet);
+        if (existingBackdrop) existingBackdrop.parentElement.removeChild(existingBackdrop);
+
+        // Create new sheet
+        document.body.insertAdjacentHTML('beforeend', this.sheetTemplate);
 
         // Get sheet and details container
         const sheet = document.querySelector('.place-details-sheet');
+        const backdrop = document.querySelector('.place-details-backdrop');
         const detailsDiv = sheet.querySelector('.details');
 
         // Add close handlers if they don't exist
         if (!sheet.closeHandlersAdded) {
             const closeButton = sheet.querySelector('.close-button');
-            const backdrop = document.querySelector('.place-details-backdrop');
             
             const closeSheet = () => {
                 sheet.classList.remove('active');
@@ -669,10 +673,17 @@ export default class PlacesComponent {
             </div>
         `;
 
-        // Now show the sheet with animation after content is loaded
+        // Reset animation state without triggering close handler
+        sheet.classList.remove('active');
+        backdrop.classList.remove('active');
+
+        // Force reflow
+        void sheet.offsetHeight;
+
+        // Show the sheet again
         requestAnimationFrame(() => {
             sheet.classList.add('active');
-            document.querySelector('.place-details-backdrop').classList.add('active');
+            backdrop.classList.add('active');
         });
     }
 

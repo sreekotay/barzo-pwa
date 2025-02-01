@@ -207,6 +207,12 @@ function handleRouteChange(route) {
     const mainContent = document.querySelector('#main-content');
     
     if (route === 'profile') {
+        // Remove any existing sheets first
+        const existingSheet = document.querySelector('.place-details-sheet');
+        const existingBackdrop = document.querySelector('.place-details-backdrop');
+        if (existingSheet) existingSheet.parentElement.removeChild(existingSheet);
+        if (existingBackdrop) existingBackdrop.parentElement.removeChild(existingBackdrop);
+        
         // Don't clear main content for profile route
         document.body.insertAdjacentHTML('beforeend', routes[route]);
         
@@ -236,7 +242,7 @@ function handleRouteChange(route) {
         const profileComponent = new ProfileComponent();
         
         // Set up one-time event listener for this profile view
-        const dataLoadedHandler = async (event) => {
+        const dataLoadedHandler = async (evt) => {
             console.log('Caught profileDataLoaded event');
             const sheet = document.querySelector('.place-details-sheet');
             const backdrop = document.querySelector('.place-details-backdrop');
@@ -245,9 +251,16 @@ function handleRouteChange(route) {
             if (profileContent && sheet) {
                 console.log('Updating profile UI');
                 // Update content first
-                await event.detail.component.updateProfileUI();
+                await evt.detail.component.updateProfileUI();
                 
-                // Then animate after content is loaded
+                // Reset animation state without triggering close handler
+                sheet.classList.remove('active');
+                backdrop.classList.remove('active');
+                
+                // Force reflow
+                void sheet.offsetHeight;
+                
+                // Show the sheet again
                 requestAnimationFrame(() => {
                     sheet.classList.add('active');
                     backdrop.classList.add('active');
@@ -612,10 +625,6 @@ function updateActiveTab(route) {
     });
 }
 
-// Update the navigation links in the HTML
-document.querySelectorAll('a[href="#profile"]').forEach(link => {
-    link.setAttribute('href', '#messages');
-});
 
 // Add a new messages link to the navigation
 const navLists = document.querySelectorAll('nav ul');

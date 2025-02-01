@@ -67,33 +67,34 @@ class ProfileComponent {
             day: 'numeric'
         });
 
+        
         const locationString = await this.mapService.getReverseGeocodedLocation();
 
         const content = `
-            <div class="receipt-container">
-                <div class="receipt-images">
-                    <div class="receipt-banner">
-                        ${this.userData.bannerImage ? 
-                            `<img src="${this.userData.bannerImage}" alt="Profile Banner">` :
-                            '<div style="width: 100%; height: 100%; background: #f0f0f0;"></div>'
+            <div class="receipt-images">
+                <div class="receipt-banner">
+                    ${this.userData.bannerImage ? 
+                        `<img src="${this.userData.bannerImage}" alt="Profile Banner">` :
+                        '<div style="width: 100%; height: 100%; background: #f0f0f0;"></div>'
+                    }
+                    <div class="receipt-profile-pic">
+                        ${this.userData.profileImage ? 
+                            `<img src="${this.userData.profileImage}" alt="${this.userData.fullName}">` :
+                            `<div class="w-full h-full bg-gray-300 flex items-center justify-center text-gray-600 text-xl font-medium">
+                                ${this.userData.fullName ? this.userData.fullName.split(' ').map(n => n[0]).join('') : '?'}
+                            </div>`
                         }
-                        <div class="receipt-profile-pic">
-                            ${this.userData.profileImage ? 
-                                `<img src="${this.userData.profileImage}" alt="${this.userData.fullName}">` :
-                                `<div class="w-full h-full bg-gray-300 flex items-center justify-center text-gray-600 text-xl font-medium">
-                                    ${this.userData.fullName ? this.userData.fullName.split(' ').map(n => n[0]).join('') : '?'}
-                                </div>`
-                            }
-                        </div>
                     </div>
                 </div>
+            </div>
+            <div class="receipt-container">
 
                 <div class="receipt-header">
-                    <div class="receipt-logo">BARZO/profile</div>
+                    <div class="receipt-logo">BARZO_BAR_TAB/${this.userData.nickname || 'profile'}</div>
                     <div class="receipt-address">
-                        ${locationString}
-                    </div>
-                    <div>REG#${this.userData.id.slice(0,4)} ID#${this.userData.id.slice(-4)}</div>
+                        Currently in ${locationString}
+                    </div >
+                    <div class="receipt-address">${this.userData.fullName} • REG#${this.userData.id.slice(0,4)} ID#${this.userData.id.slice(-4)}</div>
                 </div>
 
                 <div class="receipt-content">
@@ -107,19 +108,49 @@ class ProfileComponent {
                         <span class="receipt-value">${this.userData.activityStatus?.toUpperCase() || 'ACTIVE'}</span>
                     </div>
 
-                    ${this.userData.fullName ? `
-                        <div class="receipt-row">
-                            <span class="receipt-label">Name:</span>
-                            <span class="receipt-value">${this.userData.fullName}</span>
-                        </div>
-                    ` : ''}
-
                     ${this.userData.nickname ? `
                         <div class="receipt-row">
                             <span class="receipt-label">Nickname:</span>
                             <span class="receipt-value">@${this.userData.nickname}</span>
                         </div>
                     ` : ''}
+
+                    <div class="receipt-divider"></div>
+                    <div style="margin: 10px 0; text-align: center;">*** BOOZE BANK ***</div>
+
+
+                    <div class="receipt-row">
+                        <span class="receipt-label"><span class="text-red-500">FREE</span> Drinks on Barzo available</span>
+                        <span class="receipt-value"><a href="#" class="never-link">REDEEM</a><span style="padding-left: 10px;"> 6</span></span>
+                    </div>
+
+                    <div class="receipt-row">
+                        <span class="receipt-label">Drinks Bought for You</span>
+                        <span class="receipt-value"><a href="#" class="never-link">VIEW</a><span style="padding-left: 10px;"> 3</span></span>
+                    </div>
+
+                    <div class="receipt-row">
+                        <span class="receipt-label">Drinks You Bought</span>
+                        <span class="receipt-value"><a href="#" class="never-link">MANAGE</a><span style="padding-left: 10px;"> 8</span></span>
+                    </div>
+
+                    <div class="receipt-divider"></div>
+                    <div style="margin: 10px 0; text-align: center;">*** ACTIVITY SUMMARY ***</div>
+
+                    <div class="receipt-row">
+                        <span class="receipt-label">Places Visited:</span>
+                        <span class="receipt-value">42</span>
+                    </div>
+
+                    <div class="receipt-row">
+                        <span class="receipt-label">Friends Made:</span>
+                        <span class="receipt-value">156</span>
+                    </div>
+
+                    <div class="receipt-row">
+                        <span class="receipt-label">Events Attended:</span>
+                        <span class="receipt-value">23</span>
+                    </div>
 
                     <div class="receipt-divider"></div>
 
@@ -164,27 +195,6 @@ class ProfileComponent {
                         <span class="receipt-label">Verified:</span>
                         <span class="receipt-value">${this.userData.verified ? '✓' : '—'}</span>
                     </div>
-
-                    <!-- Fun stats (mock data) -->
-                    <div class="receipt-divider"></div>
-                    <div style="margin: 10px 0; text-align: center;">*** ACTIVITY SUMMARY ***</div>
-
-                    <div class="receipt-row">
-                        <span class="receipt-label">Places Visited:</span>
-                        <span class="receipt-value">42</span>
-                    </div>
-
-                    <div class="receipt-row">
-                        <span class="receipt-label">Friends Made:</span>
-                        <span class="receipt-value">156</span>
-                    </div>
-
-                    <div class="receipt-row">
-                        <span class="receipt-label">Events Attended:</span>
-                        <span class="receipt-value">23</span>
-                    </div>
-
-                    <div class="receipt-divider"></div>
 
                     <div class="codes-section">
                         <div class="qr-container">

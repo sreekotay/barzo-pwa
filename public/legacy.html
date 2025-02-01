@@ -141,6 +141,7 @@
                 loadingEl.innerHTML = '<p class="text-gray-600">Redirecting to authentication...</p>';
                 const currentUrl = encodeURIComponent(window.location.href) + '?authToken=${authToken}';
                 window.location.href = `https://chat.barzo.work/otp.html?redirect=${currentUrl}`;
+                //window.location.href = `http://192.168.0.6:8080/otp.html?redirect=${currentUrl}`;
                 return;
             }
 
