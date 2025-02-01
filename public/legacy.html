@@ -152,7 +152,7 @@
             try {
                 globalAuthToken = JSON.parse(decodeURIComponent(authToken));
                 localStorage.setItem('authToken', authToken);
-                const redirect = localStorage.getItem('redirect_LEGACY', redirect);
+                const redirect = localStorage.getItem('redirect_LEGACY');
                 
                 // If we have an authToken in URL, remove it and redirect
                 if (!redirect && getQueryParam('authToken')) {
