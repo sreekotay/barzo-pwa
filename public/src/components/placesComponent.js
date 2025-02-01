@@ -117,13 +117,13 @@ export default class PlacesComponent {
     }
 
     async _handleLocationChange(location) {
-        if (location) {
+        if (location && !this._mapService._pendingSearch) {
             await this._fetchNearbyPlaces(location);
         }
     }
 
     async _fetchNearbyPlaces(location) {
-        //console.log('🌍 Fetching nearby places for location:', location);
+        //console.log('🌍 ======= Fetching nearby places for location:', location);
         try {
             const radius = this._calculateRadius() * 2 / 3;
             //console.log('Fetching places for location:', location, 'radius:', radius);

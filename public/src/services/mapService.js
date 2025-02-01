@@ -91,7 +91,6 @@ class MapService {
 
         this._onAutocompleteSelect = onAutocompleteSelect;
         this._onMapDrag = onMapDrag;
-        this._isManualFromAutocomplete = false;
         this._lastAutocompletePlace = null;
 
         /** @type {Function[]} */
@@ -101,9 +100,7 @@ class MapService {
 
         this._placesLoadCallbacks = [];
 
-        this._pendingSearchPlace = null;
-
-        this._lastSearchText = null;  // Added for manual search text storage
+        this._pendingSearch = null; // Will store {place, moveComplete, searchText}
     }
 
     /**
@@ -180,7 +177,7 @@ class MapService {
         userMarkerElement.style.borderRadius = '50%';
         userMarkerElement.style.backgroundColor = '#4CAF50';
         userMarkerElement.style.border = '2px solid white';
-        userMarkerElement.style.boxShadow = '0 0 2px rgba(0,0,0,0.3)';
+        userMarkerElement.style.boxShadow = '0 0 2px rgba(0, 0, 0, 0.3)';
 
         this._userMarker = new mapboxgl.Marker({
             element: userMarkerElement
@@ -220,11 +217,8 @@ class MapService {
             async (location) => {
                 await this._reverseGeocode(location);
                 if (this._searchInput && this._currentPlace && 
-                    (!this._isManualFromAutocomplete || !this._locationService.isManualMode())) {
-                    const searchInput = document.querySelector('.google-places-input');
-                    if (searchInput) {
-                        searchInput.value = this._getSearchDisplayText(this._currentPlace);
-                    }
+                    (!this._lastAutocompletePlace || !this._locationService.isManualMode())) {
+                    this.updateSearchText(this._getSearchDisplayText(this._currentPlace));
                 }
             },
             {
@@ -278,7 +272,7 @@ class MapService {
 
             // Check if this was a user drag (not programmatic)
             if (this._map.dragPan.isActive()) {
-                this._isManualFromAutocomplete = false;  // Clear the flag on manual drag
+                this._lastAutocompletePlace = false;  // Clear the flag on manual drag
                 if (this._onMapDrag) {
                     this._onMapDrag();
                 }
@@ -385,44 +379,44 @@ class MapService {
             const place = autocomplete.getPlace();
             if (!place.geometry) return;
 
-            const searchPlace = {
-                name: place.name,
-                location: {
-                    lat: place.geometry.location.lat(),
-                    lng: place.geometry.location.lng()
-                },
-                formatted_address: place.formatted_address
+            const searchInput = document.querySelector(`#${this._searchInput} input`);
+            const location = {
+                lat: place.geometry.location.lat(),
+                lng: place.geometry.location.lng()
             };
 
-            console.log('🔍 Autocomplete place selected:', searchPlace);
+            // Do this first to preload the destination location
+            this._locationService.setMapLocation(location);
             
-            // Store both the search info and a promise for the move completion
-            this._pendingSearchPlace = {
-                place: searchPlace,
+            // Notify callbacks about the map movement
+            this._notifyCallbacks([], {
+                event: 'place_changed',
+                source: 'map_interaction',
+                location: location,
+                bounds: this._map.getBounds(),
+                zoom: this._map.getZoom()
+            });
+            // Store all search-related state in one object
+            this._pendingSearch = {
+                place: {
+                    name: place.name,
+                    location,
+                    formatted_address: place.formatted_address
+                },
                 moveComplete: new Promise(resolve => {
                     this._map.once('moveend', resolve);
-                })
+                }),
+                searchText: searchInput.value
             };
 
-            this._isManualFromAutocomplete = true;
-            this._lastSearchText = place.formatted_address;
 
             // Move map
             this._map.flyTo({
-                center: [searchPlace.location.lng, searchPlace.location.lat],
+                center: [place.geometry.location.lng(), place.geometry.location.lat()],
                 zoom: this._initialZoom
             });
         });
 
-        // Update search text only if not from autocomplete
-        this._map.on('moveend', () => {
-            if (!this._isManualFromAutocomplete) {
-                this.updateSearchText(this._getAddressFromLocation());
-            } else {
-                // Keep the manual search text
-                this.updateSearchText(this._lastSearchText);
-            }
-        });
     }
 
     /**
@@ -582,16 +576,12 @@ class MapService {
      */
     async _reverseGeocode(location) {
         // Use proper method to check manual mode
-        if (this._isManualFromAutocomplete && this._locationService.isManualMode()) {
+        if (this._lastAutocompletePlace && this._locationService.isManualMode())
             return;
-        }
 
         // Proceed with normal reverse geocoding
-        if (this._googleApiKey) {
-            await this._reverseGeocodeGoogle(location);
-        } else {
-            await this._reverseGeocodeMapbox(location);
-        }
+        if (this._googleApiKey) await this._reverseGeocodeGoogle(location);
+        else await this._reverseGeocodeMapbox(location);
     }
 
     async _reverseGeocodeGoogle(location) {
@@ -1034,6 +1024,7 @@ class MapService {
         // Only update if the input doesn't have focus
         if (searchInput && !document.activeElement.isSameNode(searchInput)) {
             searchInput.value = text;
+            searchInput.setSelectionRange(0, searchInput.value.length);
         }
     }
 
@@ -1075,7 +1066,6 @@ class MapService {
 
     // Add method to handle autocomplete selection
     handleAutocompleteSelection(place) {
-        this._isManualFromAutocomplete = true;
         this._lastAutocompletePlace = {
             name: place.name,
             location: place.geometry?.location,
@@ -1086,7 +1076,7 @@ class MapService {
     // Update map move handler
     _setupMapMoveHandler() {
         this._map.on('moveend', () => {
-            if (this._isManualFromAutocomplete) {
+            if (this._lastAutocompletePlace) {
                 // Try to find matching place in current places
                 const matchingPlace = this._findMatchingPlace(this._lastAutocompletePlace);
                 if (matchingPlace) {
@@ -1097,11 +1087,8 @@ class MapService {
                         shouldHighlight: true
                     });
                 }
-                this._isManualFromAutocomplete = false;
+                this._lastAutocompletePlace.nextTime = true; //clear it on next places update - settle's the races
                 this._lastAutocompletePlace = null;
-            } else {
-                // Normal moveend handling
-                // ...
             }
         });
     }
@@ -1148,30 +1135,27 @@ class MapService {
 
     // Add method to check for pending search
     async onPlacesUpdate(places) {
-        if (this._pendingSearchPlace) {
-            console.log('📍 Checking pending search against new places');
-            
-            // Wait for move to complete
-            await this._pendingSearchPlace.moveComplete;
+        if (this._pendingSearch) {
+            let pendingPlace = this._pendingSearch.place;
+            await this._pendingSearch.moveComplete;
             
             const matchingPlace = places.find(place => {
-                const nameMatch = place.name.toLowerCase() === this._pendingSearchPlace.place.name.toLowerCase();
+                const nameMatch = place.name.toLowerCase() === pendingPlace.name.toLowerCase();
                 const locationMatch = this._isNearby(
                     place.geometry.location,
-                    this._pendingSearchPlace.place.location,
+                    pendingPlace.location,
                     50
                 );
                 return nameMatch && locationMatch;
             });
 
             if (matchingPlace) {
-                console.log('🎯 Found matching place:', matchingPlace.name);
                 this._placesLoadCallbacks.forEach(callback => {
-                    callback(this._pendingSearchPlace.place, 'autocomplete');
+                    callback(pendingPlace, 'autocomplete');
                 });
             }
             
-            this._pendingSearchPlace = null;
+            this._pendingSearch = null;
         }
     }
 }
