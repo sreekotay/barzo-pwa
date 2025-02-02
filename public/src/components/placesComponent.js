@@ -148,23 +148,24 @@ export default class PlacesComponent {
     }
 
     async _fetchNearbyPlaces(location) {
-        //console.log('🌍 ======= Fetching nearby places for location:', location);
         try {
             const radius = this._calculateRadius() * 2 / 3;
-            //console.log('Fetching places for location:', location, 'radius:', radius);
+            // Round lat/lng to 4 decimal places (~11m precision) for better caching
+            const roundedLocation = {
+                lat: Math.round(location.lat * 10000) / 10000,
+                lng: Math.round(location.lng * 10000) / 10000
+            };
             
-            let endpoint, requestBody, data;
-            requestBody = {
-                latitude: location.lat,
-                longitude: location.lng,
-                radius: radius,
+            let requestBody = {
+                latitude: roundedLocation.lat,
+                longitude: roundedLocation.lng,
+                radius: Math.floor(radius / 100) * 100, // Round to nearest 100m
                 types: this._config.placeTypes,
                 maxResults: this._config.maxResults,
-                //apiKeyIn: this._mapService._googleApiKey
             };
 
             console.error('$$$$$$ ========= expensive call ==== PLACES COMPONENT')
-            data = await this._mapService._supabase.functions.invoke('google-places-search', {
+            const data = await this._mapService._supabase.functions.invoke('google-places-search', {
                 body: requestBody
             });
             data = data.data;
@@ -228,7 +229,12 @@ export default class PlacesComponent {
         const center = this._mapService.getMapCenter();
         const ne = bounds.getNorthEast();
         const radiusInMeters = center.distanceTo(ne);
-        return Math.min(Math.max(radiusInMeters, 1), 50000);
+        
+        // Round down to nearest 100m for better caching
+        const roundedRadius = Math.floor(radiusInMeters / 100) * 100;
+        
+        // Ensure radius is between 1m and 50km
+        return Math.min(Math.max(roundedRadius, 1), 50000);
     }
 
     _calculateDistance(lat1, lon1, lat2, lon2) {
