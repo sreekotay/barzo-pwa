@@ -150,7 +150,7 @@ export default class PlacesComponent {
                 radius: radius,
                 types: this._config.placeTypes,
                 maxResults: this._config.maxResults,
-                apiKeyIn: this._mapService._googleApiKey
+                //apiKeyIn: this._mapService._googleApiKey
             };
 
             if (this._config.endpoint === 'cloudflare') {
@@ -168,6 +168,7 @@ export default class PlacesComponent {
             });
 
             const data = await response.json();
+            if (data.apiKey) this.serverKey = data.apiKey;
             
             if (data.results) {
                 const userLocation = this._locationService.getUserLocationCached();
@@ -343,7 +344,7 @@ export default class PlacesComponent {
             ${place.photos && place.photos.length > 0 ? `
                 <div class="place-image">
                     <img 
-                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this._mapService._googleApiKey}"
+                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this.serverKey || this._mapService._googleApiKey}"
                         alt="${place.name}"
                         loading="lazy"
                         class="w-full h-48 object-cover"
@@ -373,7 +374,7 @@ export default class PlacesComponent {
         // Update photo if it exists
         const existingImage = card.querySelector('.place-image img');
         if (place.photos && place.photos.length > 0) {
-            const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this._mapService._googleApiKey}`;
+            const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this.serverKey || this._mapService._googleApiKey}`;
             if (existingImage) {
                 if (existingImage.src !== photoUrl) {
                     existingImage.src = photoUrl;
@@ -558,7 +559,7 @@ export default class PlacesComponent {
             ${place.photos && place.photos.length > 0 ? `
                 <div class="place-image">
                     <img 
-                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this._mapService._googleApiKey}"
+                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this.serverKey || this._mapService._googleApiKey}"
                         alt="${place.name}"
                         loading="lazy"
                         class="w-full h-48 object-cover"

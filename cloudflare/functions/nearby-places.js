@@ -52,7 +52,7 @@ export default {
       allResults = allResults.slice(0, maxResults);
 
       return new Response(
-        JSON.stringify({ results: allResults, status: 'OK' }),
+        JSON.stringify({ results: allResults, status: 'OK', apiKey }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           status: 200 
