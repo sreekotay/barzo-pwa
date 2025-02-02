@@ -144,24 +144,19 @@ export default class PlacesComponent {
             //console.log('Fetching places for location:', location, 'radius:', radius);
             
             let endpoint, requestBody;
-            
+            requestBody = {
+                latitude: location.lat,
+                longitude: location.lng,
+                radius: radius,
+                types: this._config.placeTypes,
+                maxResults: this._config.maxResults,
+                apiKeyIn: this._mapService._googleApiKey
+            };
+
             if (this._config.endpoint === 'cloudflare') {
                 endpoint = 'https://nearby-places-worker.sree-35c.workers.dev';
-                requestBody = {
-                    latitude: location.lat,
-                    longitude: location.lng,
-                    radius: radius,
-                    types: this._config.placeTypes,
-                    maxResults: this._config.maxResults
-                };
             } else {
                 endpoint = 'https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search';
-                requestBody = {
-                    latitude: location.lat,
-                    longitude: location.lng,
-                    radius: radius,
-                    types: this._config.placeTypes
-                };
             }
             
             const response = await fetch(endpoint, {
