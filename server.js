@@ -147,7 +147,8 @@ app.get('/api/getClientKeys', async (req, res, next) => {
   res.json({ 
     googleKey: process.env.GOOGLE_MAPS_API_KEY, 
     supabaseUrl: process.env.SUPABASE_URL,
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+    secureApiKeyPlaces: process.env.SECURE_API_KEY_PLACES
   });
 }); 
 

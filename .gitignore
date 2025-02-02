@@ -8,6 +8,7 @@ yarn-error.log
 .env
 .env.local
 .env.*.local
+.dev.vars
 
 # Build output
 dist/
@@ -20,6 +21,7 @@ out/
 *.swp
 *.swo
 .DS_Store
+.wrangler/
 
 # Data directory
 data/

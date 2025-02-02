@@ -1,6 +1,9 @@
 import MarkerManager from '../services/markerManager.js';
 import CarouselComponent from './carouselComponent.js';
 
+const PLACES_API_URL = 'https://nearby-places-worker.sree-35c.workers.dev'; // prod
+//const PLACES_API_URL = 'http://localhost:8787'; // debug
+
 export default class PlacesComponent {
     constructor(mapService, locationService, containerSelector, config = {}) {
         this._mapService = mapService;
@@ -150,38 +153,40 @@ export default class PlacesComponent {
     async _fetchNearbyPlaces(location) {
         try {
             const radius = this._calculateRadius() * 2 / 3;
-            // Round lat/lng to 4 decimal places (~11m precision) for better caching
             const roundedLocation = {
                 lat: Math.round(location.lat * 10000) / 10000,
                 lng: Math.round(location.lng * 10000) / 10000
             };
-            
-            let requestBody = {
-                latitude: roundedLocation.lat,
-                longitude: roundedLocation.lng,
-                radius: Math.floor(radius / 100) * 100, // Round to nearest 100m
-                types: this._config.placeTypes,
-                maxResults: this._config.maxResults,
-            };
 
-            console.error('$$$$$$ ========= expensive call ==== PLACES COMPONENT')
-            const data = await this._mapService._supabase.functions.invoke('google-places-search', {
-                body: requestBody
+            const response = await fetch(`${PLACES_API_URL}/nearby-places?lat=${roundedLocation.lat}&lng=${roundedLocation.lng}&radius=${Math.floor(radius / 100) * 100}&type=${this._config.placeTypes[0]}`, {
+                headers: {
+                    'X-API-Key': 'TESTING_KEY_wNTrO9zYD8cU__Pzmbs0fid80_EIqzhp7tW_FCpADDo',
+                    'Content-Type': 'application/json'
+                },
+                mode: 'cors'
             });
-            data = data.data;
 
-            if (data.apiKey) this.serverKey = data.apiKey;
-            
-            if (data.results) {
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('Places API Error:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: errorData
+                });
+                throw new Error(errorData.error || errorData.message || 'Failed to fetch places');
+            }
+
+            const places = await response.json();
+            if (places) {
                 const userLocation = this._locationService.getUserLocationCached();
-                const places = this._processPlacesData(data.results, userLocation);
-                this._markerManager.updateMarkers(places, this._config.markerColors);
-                this._updatePlacesContent(places);
+                const processedPlaces = this._processPlacesData(places, userLocation);
+                this._markerManager.updateMarkers(processedPlaces, this._config.markerColors);
+                this._updatePlacesContent(processedPlaces);
             }
         } catch (error) {
             console.error('Error fetching nearby places:', error);
-            console.log('Current DOM state:', document.body.innerHTML);
-            console.log('Container selector:', this._containerSelector);
+            // Optionally show user-friendly error message
+            // this._showError('Unable to fetch nearby places. Please try again later.');
         }
     }
 
@@ -696,15 +701,26 @@ export default class PlacesComponent {
 
     async _fetchPlaceDetails(placeId) {
         try {
-            const data = await this._mapService._supabase.functions.invoke('google-places-search', {
-                body: { 
-                    placeId,
-                    type: 'details'  // Add this to indicate we want details
-                }
+            const response = await fetch(`${PLACES_API_URL}/nearby-places?placeId=${placeId}`, {
+                headers: {
+                    'X-API-Key': 'TESTING_KEY_wNTrO9zYD8cU__Pzmbs0fid80_EIqzhp7tW_FCpADDo',
+                    'Content-Type': 'application/json'
+                },
+                mode: 'cors'
             });
-            
-            if (!data.data) throw new Error('Failed to fetch place details');
-            return data.data.result;
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('Places Details API Error:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: errorData
+                });
+                throw new Error(errorData.error || errorData.message || 'Failed to fetch place details');
+            }
+
+            const data = await response.json();
+            return data;
         } catch (error) {
             console.error('Error fetching place details:', error);
             return null;

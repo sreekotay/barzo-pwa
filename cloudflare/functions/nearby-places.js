@@ -1,72 +1,459 @@
+/**
+ * Google Places API Proxy with Caching
+ * 
+ * This worker provides a cached interface to Google Places API with two main endpoints:
+ * 1. Nearby Search: Find places near a location
+ * 2. Place Details: Get detailed information about a specific place
+ * 
+ * Features:
+ * - Cloudflare KV caching with metadata
+ * - Cache control options (no-cache, cache-reset)
+ * - Support for user-provided Google API keys
+ * - Coordinate rounding for better cache hits
+ * - Cache status headers
+ * 
+ * Endpoints:
+ * 1. Nearby Search:
+ *    GET /nearby-places?lat={latitude}&lng={longitude}&radius={meters}&type={place_type}
+ * 
+ * 2. Place Details:
+ *    GET /nearby-places?placeId={google_place_id}
+ * 
+ * Headers:
+ * - X-API-Key: Required. Your API key for this service
+ * - X-Google-API-Key: Optional. Your own Google Places API key
+ * 
+ * Query Parameters:
+ * - no-cache: Set to 'true' to bypass cache
+ * - cache-reset: Timestamp to ignore cache entries older than this time
+ * 
+ * Cache Headers in Response:
+ * - X-Cache-Hit: 'true' or 'false'
+ * - X-Cache-Type: 'places_nearby' or 'places_details'
+ * 
+ * Example Usage:
+ * curl "http://localhost:8787/nearby-places?lat=27.9506&lng=-82.4572" \
+ *   -H "X-API-Key: your_api_key"
+ * 
+ * curl "http://localhost:8787/nearby-places?placeId=ChIJv-_K-JzhwogRteKYG94IedY" \
+ *   -H "X-API-Key: your_api_key"
+ */
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Google-API-Key',
+  'Access-Control-Max-Age': '86400',  // 24 hours
+};
+
+const GRID_SIZE_METERS = 100; // Size of grid for rounding coordinates
+const GRID = {
+  SIZE_METERS: GRID_SIZE_METERS,  // Size of grid for rounding coordinates
+  LAT_PRECISION: 5, // Decimal places for latitude
+  LNG_PRECISION: 5, // Decimal places for longitude
+  MIN_RADIUS: GRID_SIZE_METERS,   // Minimum radius in meters
+  RADIUS_STEP: GRID_SIZE_METERS   // Round radius to nearest step
+};
+
+// Add provider constants
+const PROVIDER = {
+  GOOGLE: 'google',
+  MAPBOX: 'mapbox'
+};
+
+const TYPE_MAPPING = {
+  [PROVIDER.GOOGLE]: {
+    restaurant: 'restaurant',
+    bar: 'bar',
+    cafe: 'cafe'
+  },
+  [PROVIDER.MAPBOX]: {
+    restaurant: 'restaurant',
+    bar: 'bar,pub',
+    cafe: 'cafe,coffee'
+  }
+};
+
+// Add provider-specific configs
+const API_CONFIG = {
+  [PROVIDER.GOOGLE]: {
+    nearbySearch: (params, key) => 
+      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${params.lat},${params.lng}&radius=${params.radius}&type=${params.type}&key=${key}`,
+    placeDetails: (placeId, key) => 
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=place_id,name,geometry,formatted_address,formatted_phone_number,website,opening_hours,current_opening_hours,price_level,types,editorial_summary,serves_breakfast,serves_lunch,serves_dinner,serves_brunch,photos(photo_reference)&photosLimit=1&key=${key}`,
+    parseNearbyResults: (data) => data.results,
+    parsePlaceDetails: (data) => data.result
+  },
+  [PROVIDER.MAPBOX]: {
+    nearbySearch: (params, key) => 
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${TYPE_MAPPING[PROVIDER.MAPBOX][params.type]}.json?proximity=${params.lng},${params.lat}&radius=${params.radius}&limit=20&types=poi&access_token=${key}`,
+    placeDetails: (placeId, key) => 
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${placeId}.json?access_token=${key}`,
+    parseNearbyResults: (data) => data.features.map(normalizeMapboxPlace),
+    parsePlaceDetails: (data) => normalizeMapboxPlace(data.features[0])
+  }
+};
+
+// Normalize Mapbox place to match Google Places format
+function normalizeMapboxPlace(place) {
+  // Mapbox doesn't provide opening hours directly
+  // We need to handle this missing data
+  const opening_hours = place.properties.hours ? {
+    open_now: null, // Mapbox doesn't provide this
+    periods: [], // Would need to parse Mapbox's hours format
+    weekday_text: [] // Would need to convert from Mapbox format
+  } : null;
+
+  return {
+    place_id: place.id,
+    name: place.text,
+    geometry: {
+      location: {
+        lat: place.center[1],
+        lng: place.center[0]
+      }
+    },
+    formatted_address: place.place_name,
+    types: place.properties.category?.split(',') || [],
+    opening_hours,
+    formatted_phone_number: place.properties.tel || null,
+    website: place.properties.website || null,
+    price_level: place.properties.price ? place.properties.price.length : null, // Convert '$' to number
+    rating: null, // Mapbox doesn't provide ratings
+    user_ratings_total: null,
+    photos: place.properties.image ? [{
+      photo_reference: place.properties.image
+    }] : []
+  };
+}
+
+// At the top, add cache duration constants
+const CACHE_DURATION = {
+    PRODUCTION: {
+        KV: 259200,      // 72 hours
+        BROWSER: 7200,   // 2 hours
+        DETAILS: 86400   // 24 hours
+    },
+    DEVELOPMENT: {
+        KV: 60,          // 1 minute
+        BROWSER: 60,     // 1 minute
+        DETAILS: 60      // 1 minute
+    }
 };
 
 export default {
   async fetch(request, env, ctx) {
-    // Handle CORS preflight requests
+    try {
+      return await this.handleRequest(request, env, ctx);
+    } catch (error) {
+      console.error('Error in fetch:', error);
+      return new Response('Internal Server Error - Wrapper Catch', { status: 500 });
+    }
+  },
+
+  async handleRequest(request, env, ctx) {
+    // Handle CORS preflight requests first, before any other logic
     if (request.method === 'OPTIONS') {
       return new Response(null, {
-        headers: corsHeaders
+        headers: corsHeaders,
+        status: 200  // Make sure OPTIONS returns 200 OK
+      });
+    }
+
+    // Add debug response to check env vars
+    if (!env) {
+      return new Response(JSON.stringify({
+        error: "Environment not provided"
+      }), { 
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
+      });
+    }
+
+    // Add debug response to check specific env vars
+    const debugInfo = {
+      hasGoogleKey: typeof env.GOOGLE_PLACES_API_KEY === 'string',
+      hasSecureKey: typeof env.SECURE_API_KEY_PLACES === 'string',
+      hasKV: typeof env.PLACES_KV === 'object',
+      headers: request.headers ? Array.from(request.headers.entries()) : null
+    };
+
+    if (!env.GOOGLE_PLACES_API_KEY || !env.SECURE_API_KEY_PLACES || !env.PLACES_KV) {
+      return new Response(JSON.stringify({
+        error: "Missing required environment variables or KV binding",
+        debug: debugInfo
+      }), { 
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
       });
     }
 
     try {
-      const { latitude, longitude, radius, types, maxResults = 20, apiKey } = await request.json();
+      const url = new URL(request.url);
+      const authKey = request.headers?.get("X-API-Key") || '';
+      const userGoogleKey = request.headers?.get("X-Google-API-Key");
+      
+      // Cache control parameters
+      const cacheReset = url.searchParams.get("cache-reset");
+      const noCache = url.searchParams.get("no-cache") === 'true' && false; //debug
 
-      // Ensure radius is within Google Places API limits (0-50000 meters)
-      const validRadius = Math.min(Math.max(radius, 1), 50000);
+      // Cache control function
+      const shouldUseCache = async (cacheKey) => {
+        if (noCache) return false;
+        if (!cacheReset) return true;
+
+        // If cacheReset is a timestamp, check if cache is newer
+        const resetTime = parseInt(cacheReset);
+        if (!isNaN(resetTime)) {
+          const metadata = await env.PLACES_KV.getWithMetadata(cacheKey);
+          return metadata && metadata.metadata && metadata.metadata.timestamp > resetTime;
+        }
+        
+        return false;
+      };
+
+      if (!authKey || authKey !== env.SECURE_API_KEY_PLACES) {
+        return new Response(JSON.stringify({
+          error: "Unauthorized"
+        }), { 
+          status: 403,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
+      }
+
+      // Add provider selection
+      const provider = url.searchParams.get("provider") || PROVIDER.GOOGLE; //MAPBOX;
+      const apiConfig = API_CONFIG[provider];
       
-      const url = new URL('https://maps.googleapis.com/maps/api/place/nearbysearch/json');
-      url.searchParams.append('location', `${latitude},${longitude}`);
-      url.searchParams.append('radius', validRadius.toString());
-      url.searchParams.append('type', types.join('|'));
-      url.searchParams.append('key', apiKey ||env.GOOGLE_MAPS_API_KEY);
-      
-      // Add pagetoken handling for more results
-      let allResults = [];
-      let nextPageToken;
-      
-      do {
-        if (nextPageToken) {
-          url.searchParams.set('pagetoken', nextPageToken);
-          // Google requires a short delay between page token requests
-          await new Promise(resolve => setTimeout(resolve, 2000));
+      if (!apiConfig) {
+        return new Response(JSON.stringify({
+          error: "Invalid provider",
+          providedValue: provider,
+          validProviders: Object.values(PROVIDER),
+          debug: { provider, apiConfig, availableConfigs: Object.keys(API_CONFIG) }
+        }), { 
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
+      }
+
+      // Use appropriate API key
+      const apiKey = provider === PROVIDER.GOOGLE ? 
+        (userGoogleKey || env.GOOGLE_PLACES_API_KEY) : 
+        env.MAPBOX_ACCESS_TOKEN;
+
+      // Check if this is a place details request
+      const placeId = url.searchParams.get("placeId");
+      if (placeId) {
+        const detailsCacheKey = getDetailsCacheKey(placeId, provider);
+        
+        // Check if we should use cache
+        const useCache = await shouldUseCache(detailsCacheKey);
+        
+        // Check cache first if allowed
+        if (useCache) {
+            let cachedDetails = await env.PLACES_KV.get(detailsCacheKey, { type: "json" });
+            if (cachedDetails) {
+                return new Response(JSON.stringify(cachedDetails), {
+                    headers: { 
+                        ...corsHeaders,
+                        "Content-Type": "application/json",
+                        "Cache-Control": "public, max-age=86400",
+                        "X-Cache-Hit": "true",
+                        "X-Cache-Type": "places_details"
+                    },
+                });
+            }
         }
 
-        const response = await fetch(url.toString());
-        const data = await response.json();
+        // Use provider-specific details URL and parsing
+        const detailsUrl = apiConfig.placeDetails(placeId, apiKey);
+        const detailsResponse = await fetch(detailsUrl);
+        const detailsData = await detailsResponse.json();
 
-        if (data.status === 'OK') {
-          allResults = allResults.concat(data.results);
-          nextPageToken = data.next_page_token;
-        } else {
-          console.warn('Google Places API returned non-OK status:', data.status);
-          break;
+        if (!detailsResponse.ok) {
+          return new Response(JSON.stringify({
+            error: `Failed to fetch place details from ${provider}`,
+            details: detailsData
+          }), { 
+            status: 500,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json"
+            }
+          });
         }
-      } while (nextPageToken && allResults.length < maxResults);
 
-      // Trim results to maxResults
-      allResults = allResults.slice(0, maxResults);
+        const normalizedDetails = apiConfig.parsePlaceDetails(detailsData);
+        
+        // Cache normalized data
+        const isDevelopment = request.url.includes('localhost') || request.url.includes('127.0.0.1');
+        const cacheDuration = isDevelopment ? CACHE_DURATION.DEVELOPMENT : CACHE_DURATION.PRODUCTION;
+        await env.PLACES_KV.put(detailsCacheKey, JSON.stringify(normalizedDetails), {
+          expirationTtl: cacheDuration.DETAILS
+        });
 
-      return new Response(
-        JSON.stringify({ results: allResults, status: 'OK', apiKey }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200 
-        }
-      );
+        return new Response(JSON.stringify(normalizedDetails), {
+          headers: { 
+            ...corsHeaders,
+            "Content-Type": "application/json",
+            "Cache-Control": `public, max-age=${cacheDuration.DETAILS}`
+          },
+        });
+      }
+
+      const lat = parseFloat(url.searchParams.get("lat"));
+      const lng = parseFloat(url.searchParams.get("lng"));
+      const radius = Math.max(GRID.MIN_RADIUS, parseInt(url.searchParams.get("radius") || "500"));
+      const type = url.searchParams.get("type") || "restaurant";
+      
+      if (isNaN(lat) || isNaN(lng)) {
+        return new Response("Invalid latitude or longitude", { status: 400 });
+      }
+
+      // Round radius up to nearest step
+      const roundedRadius = Math.ceil(radius / GRID.RADIUS_STEP) * GRID.RADIUS_STEP;
+
+      // Round coordinates to grid
+      const METERS_PER_LAT_DEGREE = 111319.9;
+      const METERS_PER_LNG_DEGREE = Math.cos(lat * Math.PI / 180) * METERS_PER_LAT_DEGREE;
+      
+      const roundedLat = Math.round(lat * METERS_PER_LAT_DEGREE / GRID.SIZE_METERS) * GRID.SIZE_METERS / METERS_PER_LAT_DEGREE;
+      const roundedLng = Math.round(lng * METERS_PER_LNG_DEGREE / GRID.SIZE_METERS) * GRID.SIZE_METERS / METERS_PER_LNG_DEGREE;
+
+      // Format cache key with consistent precision
+      const cacheKey = getCacheKey({ 
+        lat: roundedLat, 
+        lng: roundedLng, 
+        radius: roundedRadius, 
+        type: TYPE_MAPPING[provider][type] || type,
+        provider 
+      });
+      
+      // Move this up before any cache operations
+      const isDevelopment = request.url.includes('localhost') || request.url.includes('127.0.0.1');
+      const cacheDuration = isDevelopment ? CACHE_DURATION.DEVELOPMENT : CACHE_DURATION.PRODUCTION;
+
+      // Then in the cac((he check section
+      if (await shouldUseCache()) {
+          try {
+              let cachedData = await env.PLACES_KV.getWithMetadata(cacheKey, { type: "json" });
+              if (cachedData && cachedData.value) {
+                  // Check if cache entry would have expired based on current policy
+                  const cacheAge = Date.now() - cachedData.metadata.timestamp;
+                  const maxAge = cacheDuration.KV * 1000; // Convert to milliseconds
+                  
+                  if (cacheAge < maxAge) {
+                      return new Response(JSON.stringify(cachedData.value), {
+                          headers: { 
+                              ...corsHeaders,
+                              "Content-Type": "application/json", 
+                              "Cache-Control": `public, max-age=${cacheDuration.KV}`,
+                              "X-Cache-Hit": "true",
+                              "X-Cache-Type": "places_nearby"
+                          },
+                      });
+                  }
+                  // Cache is too old based on current policy, let it fall through to refresh
+              }
+          } catch (error) {
+              console.error("Cache fetch error ----------------", error)
+              throw error;
+          }
+      }
+
+      // For nearby search
+      const searchParams = {
+        lat: roundedLat,
+        lng: roundedLng,
+        radius: roundedRadius,
+        type: TYPE_MAPPING[provider][type] || type
+      };
+
+      const searchUrl = apiConfig.nearbySearch(searchParams, apiKey);
+      const searchResponse = await fetch(searchUrl);
+      const searchData = await searchResponse.json();
+
+      if (!searchResponse.ok) {
+        console.error('Search response error:', {
+          status: searchResponse.status,
+          statusText: searchResponse.statusText
+        });
+        return new Response(JSON.stringify({
+          error: `Failed to fetch data from ${provider}`,
+          details: searchData,
+          status: searchResponse.status,
+          statusText: searchResponse.statusText,
+          response: searchData
+        }), { 
+          status: searchResponse.status || 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
+      }
+
+      const normalizedResults = apiConfig.parseNearbyResults(searchData);
+      
+      // Store in KV with expiration
+      await env.PLACES_KV.put(cacheKey, JSON.stringify(normalizedResults), { 
+        expirationTtl: cacheDuration.KV,
+        metadata: { timestamp: Date.now() }
+      });
+
+      // For non-cache responses, add cache miss header
+      return new Response(JSON.stringify(normalizedResults), {
+        headers: { 
+          ...corsHeaders,
+          "Content-Type": "application/json", 
+          "Cache-Control": `public, max-age=${cacheDuration.BROWSER}`,
+          "X-Cache-Hit": "false",
+          "X-Cache-Type": "places_nearby"
+        },
+      });
     } catch (error) {
-      console.error('Error in Google Places search:', error.message);
-      return new Response(
-        JSON.stringify({ error: error.message, results: [] }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400 
+      console.error('Error in handleRequest - after data fetch', error)
+      return new Response(JSON.stringify({
+        error: "Internal Server Error",
+        message: error.message,
+        // Include more debug info in development
+        details: env.NODE_ENV === 'development' ? {
+          url: request.url,
+          hasGoogleKey: !!env.GOOGLE_PLACES_API_KEY,
+          hasSecureKey: !!env.SECURE_API_KEY_PLACES,
+          hasKV: !!env.PLACES_KV
+        } : undefined
+      }), { 
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
         }
-      );
+      });
     }
   }
-}; 
+};
+
+function getCacheKey(params) {
+    const { lat, lng, radius, type, provider = PROVIDER.GOOGLE } = params;
+    // Use short prefix 'p' for places and include provider initial
+    return `p:${provider[0]}:${lat}:${lng}:${radius}:${type}`;
+}
+
+function getDetailsCacheKey(placeId, provider = PROVIDER.GOOGLE) {
+    // Use short prefix 'd' for details and include provider initial
+    return `d:${provider[0]}:${placeId}`;
+}

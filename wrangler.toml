@@ -7,9 +7,14 @@ compatibility_date = "2024-01-01"
 # pattern = "api/nearby-places"
 # zone_name = "barzo.app"
 
-[vars]
-# The following will be replaced by actual environment variables
-# GOOGLE_MAPS_API_KEY = "your-api-key"
+# wrangler.toml (wrangler v3.88.0^)
+[observability.logs]
+enabled = true
 
 # Use secrets for sensitive values
 # Run: wrangler secret put GOOGLE_MAPS_API_KEY
+
+[[kv_namespaces]]
+binding = "PLACES_KV"
+id = "0ef6fb2b2e93475a8e3c41db695f9136"
+preview_id = "7fb49c091ac54ac99051205d00398e26"
