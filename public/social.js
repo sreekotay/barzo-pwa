@@ -5,6 +5,7 @@ import MapService from '/src/services/mapService.js';
 import PlacesComponent from '/src/components/placesComponent.js';
 import EventsComponent from '/src/components/eventsComponent.js';
 import ProfileComponent from './src/components/profileComponent.js';
+import sheetComponent from '/src/components/sheetComponent.js';
 
 async function getClientKeys() {
     const response = await fetch('/api/getClientKeys');
@@ -15,6 +16,7 @@ async function getClientKeys() {
 // global variables
 let mapService
 let clientKeys
+let activeSheet = null;
 
 async function startupThisApp() {
     try {clientKeys = JSON.parse(localStorage.getItem('clientKeys'))} catch (e) {clientKeys = null} 
@@ -296,69 +298,31 @@ function handleRouteChange(route) {
     const mainContent = document.querySelector('#main-content');
     
     if (route === 'profile') {
-        // Remove any existing sheets first
-        const existingSheet = document.querySelector('.place-details-sheet');
-        const existingBackdrop = document.querySelector('.place-details-backdrop');
-        if (existingSheet) existingSheet.parentElement.removeChild(existingSheet);
-        if (existingBackdrop) existingBackdrop.parentElement.removeChild(existingBackdrop);
+        const content = document.createElement('div');
+        content.id = 'profile-content';
         
-        // Don't clear main content for profile route
-        document.body.insertAdjacentHTML('beforeend', routes[route]);
-        
-        // Add close handlers immediately
-        const closeButton = document.querySelector('.place-details-sheet .close-button');
-        const backdrop = document.querySelector('.place-details-backdrop');
-        
-        const closeProfile = () => {
-            const sheet = document.querySelector('.place-details-sheet');
-            const backdrop = document.querySelector('.place-details-backdrop');
-            sheet.classList.remove('active');
-            backdrop.classList.remove('active');
-            
-            // Remove the elements after animation
-            setTimeout(() => {
-                sheet.parentElement.removeChild(sheet);
-                backdrop.parentElement.removeChild(backdrop);
+        const sheet = sheetComponent.show(content, {
+            isProfile: true,
+            showCloseButton: true,
+            closeOnSwipe: true,
+            closeOnBackdrop: true,
+            className: 'profile-sheet',
+            animateImmediately: false,
+            onClose: () => {
                 window.location.hash = 'home';
-            }, 300);
-        };
-
-        [closeButton, backdrop].forEach(el => {
-            el.addEventListener('click', closeProfile);
+            }
         });
-
-        // Create new instance of ProfileComponent
+        
         const profileComponent = new ProfileComponent();
         
         // Set up one-time event listener for this profile view
         const dataLoadedHandler = async (evt) => {
             console.log('Caught profileDataLoaded event');
-            const sheet = document.querySelector('.place-details-sheet');
-            const backdrop = document.querySelector('.place-details-backdrop');
-            const profileContent = document.querySelector('#profile-content');
-            
-            if (profileContent && sheet) {
-                console.log('Updating profile UI');
-                // Update content first
-                await evt.detail.component.updateProfileUI();
-                
-                // Reset animation state without triggering close handler
-                sheet.classList.remove('active');
-                backdrop.classList.remove('active');
-                
-                // Force reflow
-                void sheet.offsetHeight;
-                
-                // Show the sheet again
-                requestAnimationFrame(() => {
-                    sheet.classList.add('active');
-                    backdrop.classList.add('active');
-                });
-            }
+            await evt.detail.component.updateProfileUI();
+            sheet.animateIn();
             document.removeEventListener('profileDataLoaded', dataLoadedHandler);
         };
         document.addEventListener('profileDataLoaded', dataLoadedHandler);
-
     } else {
         // Remove any existing profile sheets
         const existingSheet = document.querySelector('.place-details-sheet');
@@ -578,30 +542,24 @@ function initializeBottomSheet() {
 
 // Add this function to handle showing place details
 function showPlaceDetails(place) {
-    const sheet = document.querySelector('.place-details-sheet');
-    const backdrop = document.querySelector('.place-details-backdrop');
-    const detailsDiv = sheet.querySelector('.details');
-    
-    // Format types for display
     const formattedTypes = (place.types || [])
         .filter(type => !['point_of_interest', 'establishment'].includes(type))
         .map(type => type.replace(/_/g, ' '))
         .join(', ') || 'Business';
-    
-    // Build the content HTML
-    let contentHTML = `
-            ${place.photos && place.photos.length > 0 ? `
-            <div class="photos">
-                <div class="photo-grid">
-                    ${place.photos.map(photo => `
-                        <img 
-                            src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${mapService._googleApiKey}"
-                            alt="${place.name}"
-                            loading="lazy"
-                        >
-                    `).join('')}
-                </div>
+
+    const content = `
+        ${place.photos && place.photos.length > 0 ? `
+        <div class="photos">
+            <div class="photo-grid">
+                ${place.photos.map(photo => `
+                    <img 
+                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${mapService._googleApiKey}"
+                        alt="${place.name}"
+                        loading="lazy"
+                    >
+                `).join('')}
             </div>
+        </div>
         ` : ''}
 
         <div class="content-grid">
@@ -632,10 +590,12 @@ function showPlaceDetails(place) {
         </div>
     `;
 
-    // Update content and show the sheet
-    detailsDiv.innerHTML = contentHTML;
-    sheet.classList.add('active');
-    backdrop.classList.add('active');
+    sheetComponent.show(content, {
+        maxHeight: '90vh',
+        closeOnSwipe: true,
+        closeOnBackdrop: true,
+        className: 'place-details-sheet'
+    });
 }
 
 // Update POIs based on current type
@@ -662,3 +622,141 @@ async function updatePOIs() {
         });
     }
 }
+
+function showBottomSheet(content, options = {}) {
+    const {
+        onClose,
+        fullscreen = false,
+        maxHeight = '90vh',
+        closeOnBackdrop = true,
+        closeOnSwipe = true,
+        showCloseButton = true
+    } = options;
+
+    // Remove any existing sheets
+    hideBottomSheet();
+
+    // Create sheet elements
+    const backdrop = document.createElement('div');
+    backdrop.className = 'place-details-backdrop';
+    
+    const sheet = document.createElement('div');
+    sheet.className = 'place-details-sheet';
+    sheet.style.maxHeight = maxHeight;
+    if (fullscreen) {
+        sheet.style.height = '100vh';
+        sheet.style.borderRadius = '0';
+    }
+
+    // Add close button if requested
+    if (showCloseButton) {
+        const closeButton = document.createElement('button');
+        closeButton.className = 'close-button absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100';
+        closeButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        `;
+        closeButton.addEventListener('click', () => hideBottomSheet());
+        sheet.appendChild(closeButton);
+    }
+
+    // Add content container
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'sheet-content';
+    if (typeof content === 'string') {
+        contentDiv.innerHTML = content;
+    } else if (content instanceof Element) {
+        contentDiv.appendChild(content);
+    }
+    sheet.appendChild(contentDiv);
+
+    // Add swipe handling if enabled
+    if (closeOnSwipe) {
+        let touchStart = null;
+        let currentTranslate = 0;
+
+        sheet.addEventListener('touchstart', (e) => {
+            touchStart = e.touches[0].clientY;
+            sheet.style.transition = 'none';
+        }, { passive: true });
+
+        sheet.addEventListener('touchmove', (e) => {
+            if (touchStart === null) return;
+            
+            const currentTouch = e.touches[0].clientY;
+            const diff = currentTouch - touchStart;
+            
+            // Only allow downward swipe
+            if (diff < 0) return;
+            
+            currentTranslate = diff;
+            sheet.style.transform = `translateY(${diff}px)`;
+            backdrop.style.opacity = Math.max(0, 1 - (diff / sheet.offsetHeight));
+            
+        }, { passive: true });
+
+        sheet.addEventListener('touchend', (e) => {
+            if (touchStart === null) return;
+            
+            sheet.style.transition = 'transform 0.3s ease-out';
+            backdrop.style.transition = 'opacity 0.3s ease-out';
+            
+            if (currentTranslate > sheet.offsetHeight * 0.3) {
+                hideBottomSheet();
+            } else {
+                sheet.style.transform = '';
+                backdrop.style.opacity = '';
+            }
+            
+            touchStart = null;
+            currentTranslate = 0;
+        });
+    }
+
+    // Add click handler to backdrop if enabled
+    if (closeOnBackdrop) {
+        backdrop.addEventListener('click', () => hideBottomSheet());
+    }
+
+    // Store active sheet info
+    activeSheet = {
+        backdrop,
+        sheet,
+        onClose
+    };
+
+    // Add to DOM and animate in
+    document.body.appendChild(backdrop);
+    document.body.appendChild(sheet);
+    
+    // Force reflow
+    void sheet.offsetHeight;
+    
+    // Animate in
+    requestAnimationFrame(() => {
+        backdrop.classList.add('active');
+        sheet.classList.add('active');
+    });
+}
+
+function hideBottomSheet() {
+    if (!activeSheet) return;
+
+    const { backdrop, sheet, onClose } = activeSheet;
+
+    backdrop.classList.remove('active');
+    sheet.classList.remove('active');
+
+    // Remove after animation
+    setTimeout(() => {
+        backdrop.remove();
+        sheet.remove();
+        if (onClose) onClose();
+    }, 300);
+
+    activeSheet = null;
+}
+
+// Export the sheet functions
+export { showBottomSheet, hideBottomSheet };
