@@ -6,71 +6,156 @@ import PlacesComponent from '/src/components/placesComponent.js';
 import EventsComponent from '/src/components/eventsComponent.js';
 import ProfileComponent from './src/components/profileComponent.js';
 
-const mapService = new MapService(locationService, {
-    mapContainer: 'map',
-    accessToken: 'pk.eyJ1Ijoic3JlZWJhcnpvIiwiYSI6ImNtNXdwOHl1aDAwaGgyam9vbHdjYnIyazQifQ.StZ77F8-5g43kq29k2OLaw',
-    googleApiKey: 'AIzaSyDy1nNu0vLAHvnSJHPVVHPmPuJmlq3NSlo',
-    searchInput: 'search-container',
-    searchInputLevel: 'neighborhood'
-});
-
-if (!localStorage.getItem('authToken')) {
-    //alert ("no auth token");
-    window.location.href = '/legacy.html?redirect=' + encodeURIComponent(window.location.href);
+async function getGoogleApiKey() {
+    const response = await fetch('/api/googleMapsAPIKey');
+    const data = await response.json();
+    return data.key;
 }
 
-mapService.initialize();
+let mapService // global variable
 
-// Keep track of places data
-let currentPlaces = [];
-
-// Add at the top with other state variables
-let currentIntersectionObserver = null;
-let isUpdating = false;
-
-// Add state for current POI type
-let currentPOIType = 'venues'; // or 'events'
-
-// Update places change callback to store data
-mapService.onPlacesChange((places) => {
-    currentPlaces = places;
-});
-
-// Update the marker click handler to handle everything
-mapService.onMarkerClick((place) => {
-    if (isUpdating) return;
-    isUpdating = true;
-
-    // Disconnect observer before any changes
-    if (currentIntersectionObserver) {
-        currentIntersectionObserver.disconnect();
+async function startupThisApp() {
+    let googleApiKey = localStorage.getItem('googleApiKey') 
+    if (!googleApiKey) {
+        googleApiKey = await getGoogleApiKey();
+        if (googleApiKey) localStorage.setItem('googleApiKey', googleApiKey);
+    } else {
+        getGoogleApiKey(googleApiKey=>{
+            if (googleApiKey) localStorage.setItem('googleApiKey', googleApiKey);
+        });
     }
 
-    // Update card borders and scroll
-    document.querySelectorAll('.place-card').forEach(card => {
-        card.dataset.selected = (card.dataset.placeId === place.place_id).toString();
+    mapService = new MapService(locationService, {
+        mapContainer: 'map',
+        accessToken: 'pk.eyJ1Ijoic3JlZWJhcnpvIiwiYSI6ImNtNXdwOHl1aDAwaGgyam9vbHdjYnIyazQifQ.StZ77F8-5g43kq29k2OLaw',
+        googleApiKey: googleApiKey,
+        searchInput: 'search-container',
+        searchInputLevel: 'neighborhood'
     });
 
-    const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
-    if (card && window.placesComponent) {
-        // Use the proper method from placesComponent
-        window.placesComponent._scrollCardIntoView(place.place_id);
+    if (!localStorage.getItem('authToken')) {
+        //alert ("no auth token");
+        window.location.href = '/legacy.html?redirect=' + encodeURIComponent(window.location.href);
     }
 
-    mapService.selectMarker(place.place_id);
+    mapService.initialize();
 
-    // Re-observe after a delay
-    setTimeout(() => {
+    // Keep track of places data
+    let currentPlaces = [];
+
+    // Add at the top with other state variables
+    let currentIntersectionObserver = null;
+    let isUpdating = false;
+
+    // Add state for current POI type
+    let currentPOIType = 'venues'; // or 'events'
+
+    // Update places change callback to store data
+    mapService.onPlacesChange((places) => {
+        currentPlaces = places;
+    });
+
+    // Update the marker click handler to handle everything
+    mapService.onMarkerClick((place) => {
+        if (isUpdating) return;
+        isUpdating = true;
+
+        // Disconnect observer before any changes
         if (currentIntersectionObserver) {
-            document.querySelectorAll('.place-card').forEach(card => {
-                currentIntersectionObserver.observe(card);
-            });
+            currentIntersectionObserver.disconnect();
         }
-        isUpdating = false;
-    }, 100);
+
+        // Update card borders and scroll
+        document.querySelectorAll('.place-card').forEach(card => {
+            card.dataset.selected = (card.dataset.placeId === place.place_id).toString();
+        });
+
+        const card = document.querySelector(`.place-card[data-place-id="${place.place_id}"]`);
+        if (card && window.placesComponent) {
+            // Use the proper method from placesComponent
+            window.placesComponent._scrollCardIntoView(place.place_id);
+        }
+
+        mapService.selectMarker(place.place_id);
+
+        // Re-observe after a delay
+        setTimeout(() => {
+            if (currentIntersectionObserver) {
+                document.querySelectorAll('.place-card').forEach(card => {
+                    currentIntersectionObserver.observe(card);
+                });
+            }
+            isUpdating = false;
+        }, 100);
+    });
+}
+
+
+
+
+
+// Update the initialize function to remove scroll-related initialization
+export async function initialize() {
+    await startupThisApp();
+    locationService.requestGeoLocation();
+    const { closeMenu } = initializeMobileMenu();
+    initializeBottomSheet();
+    router(); // Initial route
+    
+    // Handle route changes
+    window.addEventListener('hashchange', router);
+    
+    // Setup navigation links
+    document.querySelectorAll('a[href^="#"]').forEach(link => {
+        link.addEventListener('click', () => {
+            const isMobile = window.innerWidth < 1024;
+            if (isMobile) {
+                closeMenu();
+            }
+        });
+    });
+
+    initMapResize();
+
+    // When entering manual mode
+    mapService.setManualMode(true);
+
+    // When exiting manual mode
+    mapService.setManualMode(false);
+
+    // Add center button handler
+    const centerButton = document.getElementById('center-button');
+    if (centerButton) {
+        centerButton.addEventListener('click', () => {
+            mapService.centerOnCurrentLocation();
+        });
+    }
+
+    // Initialize header profile component only
+    window.profileComponent = new ProfileComponent();
+}
+
+export function updateLocation() {
+    return locationService.getUserLocation();
+}
+
+// Helper function to update active tab
+function updateActiveTab(route) {
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.route === route);
+    });
+}
+
+// fix me $$$SREE
+// Add a new messages link to the navigation
+const navLists = document.querySelectorAll('nav ul');
+navLists.forEach(ul => {
+    const messagesLink = document.createElement('li');
+    messagesLink.innerHTML = '<a href="#messages" class="block text-gray-600 hover:text-red-500">Messages</a>';
+    ul.insertBefore(messagesLink, ul.querySelector('a[href="#settings"]').parentElement);
 });
 
-// Private functions
+     // Private functions
 function initializeMobileMenu() {
     const hamburger = document.getElementById('hamburger-menu');
     const sidebar = document.getElementById('mobile-sidebar');
@@ -110,7 +195,7 @@ const routes = {
             </div>
 
             <div id="places-container" class="mb-4"></div>
-          <!-- <div class="flex px-4 mb-1">
+        <!-- <div class="flex px-4 mb-1">
                 <div class="poi-toggle bg-white rounded-lg shadow">
                     <div class="flex">
                         <button class="px-4 py-2 rounded-l-lg bg-red-600 text-white" data-type="venues">
@@ -578,63 +663,3 @@ async function updatePOIs() {
         });
     }
 }
-
-// Update the initialize function to remove scroll-related initialization
-export function initialize() {
-    locationService.requestGeoLocation();
-    const { closeMenu } = initializeMobileMenu();
-    initializeBottomSheet();
-    router(); // Initial route
-    
-    // Handle route changes
-    window.addEventListener('hashchange', router);
-    
-    // Setup navigation links
-    document.querySelectorAll('a[href^="#"]').forEach(link => {
-        link.addEventListener('click', () => {
-            const isMobile = window.innerWidth < 1024;
-            if (isMobile) {
-                closeMenu();
-            }
-        });
-    });
-
-    initMapResize();
-
-    // When entering manual mode
-    mapService.setManualMode(true);
-
-    // When exiting manual mode
-    mapService.setManualMode(false);
-
-    // Add center button handler
-    const centerButton = document.getElementById('center-button');
-    if (centerButton) {
-        centerButton.addEventListener('click', () => {
-            mapService.centerOnCurrentLocation();
-        });
-    }
-
-    // Initialize header profile component only
-    window.profileComponent = new ProfileComponent();
-}
-
-export function updateLocation() {
-    return locationService.getUserLocation();
-}
-
-// Helper function to update active tab
-function updateActiveTab(route) {
-    document.querySelectorAll('.tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.route === route);
-    });
-}
-
-
-// Add a new messages link to the navigation
-const navLists = document.querySelectorAll('nav ul');
-navLists.forEach(ul => {
-    const messagesLink = document.createElement('li');
-    messagesLink.innerHTML = '<a href="#messages" class="block text-gray-600 hover:text-red-500">Messages</a>';
-    ul.insertBefore(messagesLink, ul.querySelector('a[href="#settings"]').parentElement);
-});

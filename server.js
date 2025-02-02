@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
@@ -142,6 +143,10 @@ app.use((err, req, res, next) => {
 });
 
 // API Routes - proxy to worker
+app.get('/api/googleMapsAPIKey', async (req, res, next) => {
+  res.json({ key: process.env.GOOGLE_MAPS_API_KEY });
+}); 
+
 app.get('/api/vapidPublicKey', async (req, res, next) => {
   try {
     console.log('Fetching VAPID key from worker:', `${WORKER_URL}/api/vapidPublicKey`);
