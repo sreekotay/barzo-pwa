@@ -293,8 +293,11 @@ export default class PlacesComponent {
             return;
         }
 
-        // Clear any existing content
-        container.innerHTML = '';
+        // Remove only the "no places" message if it exists
+        const noPlacesMessage = container.querySelector('.no-places-message');
+        if (noPlacesMessage) {
+            noPlacesMessage.remove();
+        }
 
         this._currentPlaces = places;
         let placesScroll = this._carousel.getOrCreateScrollContainer();
