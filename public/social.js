@@ -6,32 +6,35 @@ import PlacesComponent from '/src/components/placesComponent.js';
 import EventsComponent from '/src/components/eventsComponent.js';
 import ProfileComponent from './src/components/profileComponent.js';
 
-async function getGoogleApiKey() {
-    const response = await fetch('/api/googleMapsAPIKey');
+async function getClientKeys() {
+    const response = await fetch('/api/getClientKeys');
     const data = await response.json();
-    return data.key;
+    return data;
 }
 
-let mapService // global variable
+// global variables
+let mapService
+let clientKeys
 
 async function startupThisApp() {
-    let googleApiKey = localStorage.getItem('googleApiKey') 
-    if (!googleApiKey) {
-        googleApiKey = await getGoogleApiKey();
-        if (googleApiKey) localStorage.setItem('googleApiKey', googleApiKey);
+    try {clientKeys = JSON.parse(localStorage.getItem('clientKeys'))} catch (e) {clientKeys = null} 
+    if (!clientKeys) {
+        clientKeys = await getClientKeys();
+        if (clientKeys) localStorage.setItem('clientKeys', JSON.stringify(clientKeys));
     } else {
-        getGoogleApiKey().then(gk=>{
-            if (gk && gk!=googleApiKey) localStorage.setItem('googleApiKey', gk);
+        getClientKeys().then(cks=>{
+            if (cks && cks!=JSON.stringify(clientKeys)) localStorage.setItem('clientKeys', cks);
         });
     }
 
     mapService = new MapService(locationService, {
         mapContainer: 'map',
         accessToken: 'pk.eyJ1Ijoic3JlZWJhcnpvIiwiYSI6ImNtNXdwOHl1aDAwaGgyam9vbHdjYnIyazQifQ.StZ77F8-5g43kq29k2OLaw',
-        googleApiKey: googleApiKey,
+        googleApiKey: clientKeys.googleKey,
         searchInput: 'search-container',
         searchInputLevel: 'neighborhood'
     });
+    mapService._supabase = supabase.createClient(clientKeys.supabaseUrl, clientKeys.supabaseAnonKey);
 
     if (!localStorage.getItem('authToken')) {
         //alert ("no auth token");
@@ -89,10 +92,6 @@ async function startupThisApp() {
         }, 100);
     });
 }
-
-
-
-
 
 // Update the initialize function to remove scroll-related initialization
 export async function initialize() {

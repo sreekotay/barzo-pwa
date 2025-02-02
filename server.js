@@ -143,8 +143,12 @@ app.use((err, req, res, next) => {
 });
 
 // API Routes - proxy to worker
-app.get('/api/googleMapsAPIKey', async (req, res, next) => {
-  res.json({ key: process.env.GOOGLE_MAPS_API_KEY });
+app.get('/api/getClientKeys', async (req, res, next) => {
+  res.json({ 
+    googleKey: process.env.GOOGLE_MAPS_API_KEY, 
+    supabaseUrl: process.env.SUPABASE_URL,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+  });
 }); 
 
 app.get('/api/vapidPublicKey', async (req, res, next) => {

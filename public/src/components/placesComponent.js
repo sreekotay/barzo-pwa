@@ -143,7 +143,7 @@ export default class PlacesComponent {
             const radius = this._calculateRadius() * 2 / 3;
             //console.log('Fetching places for location:', location, 'radius:', radius);
             
-            let endpoint, requestBody;
+            let endpoint, requestBody, data;
             requestBody = {
                 latitude: location.lat,
                 longitude: location.lng,
@@ -153,21 +153,29 @@ export default class PlacesComponent {
                 //apiKeyIn: this._mapService._googleApiKey
             };
 
-            if (this._config.endpoint === 'cloudflare') {
-                endpoint = 'https://nearby-places-worker.sree-35c.workers.dev';
+            console.error('$$$$$$ ========= expensive call ==== PLACES COMPONENT')
+            if (1) {
+                data = await this._mapService._supabase.functions.invoke('google-places-search', {
+                    body: requestBody
+                });
+                data = data.data;
             } else {
-                endpoint = 'https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search';
+                if (this._config.endpoint === 'cloudflare') {
+                    endpoint = 'https://nearby-places-worker.sree-35c.workers.dev';
+                } else {
+                    endpoint = 'https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search';
+                }
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                data = await response.json();
             }
-            
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
-            });
 
-            const data = await response.json();
             if (data.apiKey) this.serverKey = data.apiKey;
             
             if (data.results) {
