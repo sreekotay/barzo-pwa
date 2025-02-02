@@ -451,12 +451,13 @@ export default class PlacesComponent {
         const container = this._getContainer();
         if (!container) return;
 
+        // Create new intersection observer
         const observer = this._carousel.setupIntersectionObserver((mostVisibleCard) => {
+            if (this._isUpdating) return;
+            
             const placeId = mostVisibleCard.dataset.placeId;
-            this._isUpdating = true;
             this._carousel.selectCard(placeId);
             this._markerManager.selectMarker(placeId);
-            this._isUpdating = false;
         });
 
         // Add click and hover handlers to cards
@@ -465,31 +466,24 @@ export default class PlacesComponent {
             if (!this._carousel.isMobile()) {
                 card.addEventListener('mouseenter', () => {
                     if (this._isUpdating) return;
-                    this._isUpdating = true;
                     
                     const placeId = card.dataset.placeId;
                     this._carousel.selectCard(placeId);
                     this._markerManager.selectMarker(placeId);
-                    
-                    this._isUpdating = false;
                 });
 
                 // Add mouseleave to clear selection
                 card.addEventListener('mouseleave', () => {
                     if (this._isUpdating) return;
-                    this._isUpdating = true;
                     
                     this._carousel.clearSelection();
                     this._markerManager.selectMarker(null);
-                    
-                    this._isUpdating = false;
                 });
             }
             
             // Add click handler for both mobile and desktop
             card.addEventListener('click', () => {
                 if (this._isUpdating) return;
-                this._isUpdating = true;
                 
                 const placeId = card.dataset.placeId;
                 console.log('🎯 Card clicked:', placeId);
@@ -501,8 +495,6 @@ export default class PlacesComponent {
                 if (place) {
                     this._showPlaceDetails(place);
                 }
-                
-                this._isUpdating = false;
             });
         });
     }
