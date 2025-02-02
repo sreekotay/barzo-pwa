@@ -284,9 +284,17 @@ export default class PlacesComponent {
         if (!container) return;
 
         if (!places?.length) {
-            this._carousel.showEmptyMessage('No places found nearby');
+            // Just update the container directly if no places
+            container.innerHTML = `
+                <div class="no-places-message">
+                    No places found nearby
+                </div>
+            `;
             return;
         }
+
+        // Clear any existing content
+        container.innerHTML = '';
 
         this._currentPlaces = places;
         let placesScroll = this._carousel.getOrCreateScrollContainer();
