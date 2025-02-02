@@ -154,27 +154,10 @@ export default class PlacesComponent {
             };
 
             console.error('$$$$$$ ========= expensive call ==== PLACES COMPONENT')
-            if (1) {
-                data = await this._mapService._supabase.functions.invoke('google-places-search', {
-                    body: requestBody
-                });
-                data = data.data;
-            } else {
-                if (this._config.endpoint === 'cloudflare') {
-                    endpoint = 'https://nearby-places-worker.sree-35c.workers.dev';
-                } else {
-                    endpoint = 'https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search';
-                }
-                
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(requestBody)
-                });
-                data = await response.json();
-            }
+            data = await this._mapService._supabase.functions.invoke('google-places-search', {
+                body: requestBody
+            });
+            data = data.data;
 
             if (data.apiKey) this.serverKey = data.apiKey;
             
@@ -697,21 +680,15 @@ export default class PlacesComponent {
 
     async _fetchPlaceDetails(placeId) {
         try {
-            const response = await fetch(`https://twxkuwesyfbvcywgnlfe.supabase.co/functions/v1/google-places-search`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
+            const data = await this._mapService._supabase.functions.invoke('google-places-search', {
+                body: { 
                     placeId,
-                    key: this._mapService._googleApiKey,
                     type: 'details'  // Add this to indicate we want details
-                })
+                }
             });
             
-            if (!response.ok) throw new Error('Failed to fetch place details');
-            const data = await response.json();
-            return data.result;
+            if (!data.data) throw new Error('Failed to fetch place details');
+            return data.data.result;
         } catch (error) {
             console.error('Error fetching place details:', error);
             return null;

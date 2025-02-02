@@ -284,7 +284,7 @@ class ProfileComponent {
                 });
 
             // Start loading the image
-            img.src = this.userData.profileImage;
+            img.src = CDNize.profile(this.userData.profileImage);
         } else {
             // No profile image, show initials immediately
             this.showInitials(profilePic);
