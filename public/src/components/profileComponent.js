@@ -1,5 +1,6 @@
 import locationService from '/src/services/locationService.js';
 import MapService from '/src/services/mapService.js';
+import CDNize from '../utils/cdnize.js';
 
 class ProfileComponent {
     constructor() {
@@ -74,12 +75,12 @@ class ProfileComponent {
             <div class="receipt-images">
                 <div class="receipt-banner">
                     ${this.userData.bannerImage ? 
-                        `<img src="${this.userData.bannerImage}" alt="Profile Banner">` :
+                        `<img src="${CDNize.banner(this.userData.bannerImage)}" alt="Profile Banner">` :
                         '<div style="width: 100%; height: 100%; background: #f0f0f0;"></div>'
                     }
                     <div class="receipt-profile-pic">
                         ${this.userData.profileImage ? 
-                            `<img src="${this.userData.profileImage}" alt="${this.userData.fullName}">` :
+                            `<img src="${CDNize.profile(this.userData.profileImage)}" alt="${this.userData.fullName}">` :
                             `<div class="w-full h-full bg-gray-300 flex items-center justify-center text-gray-600 text-xl font-medium">
                                 ${this.userData.fullName ? this.userData.fullName.split(' ').map(n => n[0]).join('') : '?'}
                             </div>`
@@ -271,7 +272,7 @@ class ProfileComponent {
             // Race between image load and timeout
             Promise.race([imageLoadPromise, timeoutPromise])
                 .then(() => {
-                    profilePic.innerHTML = `<img src="${this.userData.profileImage}" 
+                    profilePic.innerHTML = `<img src="${CDNize.profile(this.userData.profileImage)}" 
                         alt="${this.userData.fullName}" 
                         class="w-full h-full object-cover">`;
                     showProfilePic();

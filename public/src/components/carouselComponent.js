@@ -96,6 +96,9 @@ export default class CarouselComponent {
             this._currentIntersectionObserver.disconnect();
         }
 
+        // Store the callback
+        this._onCardVisible = onCardVisible;
+
         // Only use intersection observer on mobile
         const isMobile = this.isMobile();
         
@@ -119,7 +122,7 @@ export default class CarouselComponent {
                     });
 
                     if (mostVisibleCard && maxRatio > 0.5) {
-                        onCardVisible(mostVisibleCard);
+                        this._onCardVisible(mostVisibleCard);
                     }
                 },
                 {

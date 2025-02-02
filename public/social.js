@@ -20,8 +20,8 @@ async function startupThisApp() {
         googleApiKey = await getGoogleApiKey();
         if (googleApiKey) localStorage.setItem('googleApiKey', googleApiKey);
     } else {
-        getGoogleApiKey(googleApiKey=>{
-            if (googleApiKey) localStorage.setItem('googleApiKey', googleApiKey);
+        getGoogleApiKey().then(gk=>{
+            if (gk && gk!=googleApiKey) localStorage.setItem('googleApiKey', gk);
         });
     }
 

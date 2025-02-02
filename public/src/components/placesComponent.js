@@ -351,6 +351,7 @@ export default class PlacesComponent {
                         src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this._mapService._googleApiKey}"
                         alt="${place.name}"
                         loading="lazy"
+                        class="w-full h-48 object-cover"
                     >
                 </div>
             ` : ''}
