@@ -189,8 +189,8 @@ const routes = {
         <div class="pt-4">
             <!-- First row - Bars & Restaurants -->
             <div class="flex px-4 mb-1 items-center">
-                <div class="w-2 h-2 rounded-full bg-red-600 mx-2"></div>
                 <h3 class="text-sm font-medium text-gray-500">BARS & CLUBS</h3>
+                <div class="w-2 h-2 rounded-full bg-red-600 mx-2"></div>
             </div>
 
             <div id="places-container" class="mb-4"></div>
@@ -209,8 +209,8 @@ const routes = {
 
             <!-- Second row - Entertainment -->
             <div class="flex px-4 mb-1 items-center">
-                <div class="w-2 h-2 rounded-full bg-blue-500 mx-2"></div>
                 <h3 class="text-sm font-medium text-gray-500">RESTAURANTS & CAFÉS</h3>
+                <div class="w-2 h-2 rounded-full bg-blue-500 mx-2"></div>
             </div>
             <div id="entertainment-container" class="mb-4"></div>
 

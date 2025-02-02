@@ -132,7 +132,17 @@ export default class PlacesComponent {
     }
 
     async _handleLocationChange(location) {
-        if (location && !this._mapService._pendingSearch) {
+        // Add distance check before fetching
+        const lastLocation = this._lastFetchLocation;
+        const shouldFetch = !lastLocation || this._calculateDistance(
+            lastLocation.lat,
+            lastLocation.lng,
+            location.lat,
+            location.lng
+        ) > 50; // 50 meters threshold
+
+        if (location && !this._mapService._pendingSearch && shouldFetch) {
+            this._lastFetchLocation = location; // Store location of last fetch
             await this._fetchNearbyPlaces(location);
         }
     }

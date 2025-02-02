@@ -73,7 +73,7 @@
     top: 0;
     width: 100%;
     padding: 0 16px;
-    z-index: 100;
+    z-index: 30;
     background: #111;
     color: white;
 }
@@ -369,8 +369,7 @@
     overflow-x: auto;
     -ms-overflow-style: none;
     scrollbar-width: none;
-    margin-bottom: 2px;
-    padding-bottom: 4px;  /* Add space for border */
+    margin-bottom: 4px;
     border-bottom: 1px solid #ddd;  /* Light gray underline */
 }
 
