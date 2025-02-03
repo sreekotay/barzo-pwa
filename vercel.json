@@ -6,18 +6,18 @@
       "use": "@vercel/node"
     },
     {
-      "src": "public/**",
-      "use": "@vercel/static"
+      "src": "public/src/styles/main.css",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "public/dist",
+        "buildCommand": "npm run build"
+      }
     }
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "server.js"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/public/$1"
+      "dest": "/server.js"
     }
   ],
   "env": {
