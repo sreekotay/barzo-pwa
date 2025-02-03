@@ -186,74 +186,58 @@ class MapService {
         });
         document.getElementById(this._mapContainer).classList.add('map-loaded');
 
-        // Create a promise that resolves when both style and map are loaded
-        await new Promise(resolve => {
-            let styleLoaded = false;
-            let mapLoaded = false;
-
-            const checkBothLoaded = () => {
-                if (styleLoaded && mapLoaded) {
-                    resolve();
-                }
-            };
-
-            this._map.on('style.load', () => {
-                styleLoaded = true;
-                checkBothLoaded();
-            });
-
-            this._map.on('load', () => {
-                mapLoaded = true;
-                checkBothLoaded();
+        // Wait for both map and style to load before adding fog
+        this._map.on('style.load', () => {
+            // Add atmosphere and fog effects
+            this._map.setFog({
+                'color': 'rgb(186, 210, 235)',
+                'high-color': 'rgb(36, 92, 223)',
+                'horizon-blend': 0.02,
+                'space-color': 'rgb(11, 11, 25)',
+                'star-intensity': 0.6
             });
         });
 
-        // Now safe to set fog and continue with initialization
-        this._map.setFog({
-            'color': 'rgb(186, 210, 235)',
-            'high-color': 'rgb(36, 92, 223)',
-            'horizon-blend': 0.02,
-            'space-color': 'rgb(11, 11, 25)',
-            'star-intensity': 0.6
-        });
+        // Update map ready handling
+        this._map.on('load', () => {
+            console.log('Map loaded, running callbacks...');
+            this._mapInitialized = true;
+            this._mapReadyCallbacks.forEach(callback => callback());
+            this._mapReadyCallbacks = [];
 
-        console.log('Map loaded, running callbacks...');
-        this._mapInitialized = true;
-        this._mapReadyCallbacks.forEach(callback => callback());
-        this._mapReadyCallbacks = [];
-
-        // Only animate if enough time has passed
-        if (shouldAnimate && cachedLocation) {
-            setTimeout(() => {
-                this._map.flyTo({
-                    center: [cachedLocation.lng, cachedLocation.lat],
-                    zoom: this._initialZoom,
-                    duration: 3000,  // 3 seconds animation
-                    essential: true
-                });
-                // Store the animation time
-                localStorage.setItem('lastGlobeAnimation', Date.now().toString());
-            }, 1000);
-        }
-
-        // Set up the center function
-        window.centerOnUserLocation = () => {
-            const userLocation = this._locationService.getUserLocation();
-            if (!userLocation) {
-                console.log('No user location, requesting...');
-                this._locationService.requestGeoLocation();
-                return;
+            // Only animate if enough time has passed
+            if (shouldAnimate && cachedLocation) {
+                setTimeout(() => {
+                    this._map.flyTo({
+                        center: [cachedLocation.lng, cachedLocation.lat],
+                        zoom: this._initialZoom,
+                        duration: 3000,  // 3 seconds animation
+                        essential: true
+                    });
+                    // Store the animation time
+                    localStorage.setItem('lastGlobeAnimation', Date.now().toString());
+                }, 1000);
             }
 
-            console.log('Centering map on:', userLocation);
-            this._isManualMode = false;
-            this._locationService.setMapLocation(userLocation);
-            this._map.flyTo({
-                center: [userLocation.lng, userLocation.lat],
-                zoom: this._initialZoom,
-                duration: 1000
-            });
-        };
+            // Set up the center function after map is initialized
+            window.centerOnUserLocation = () => {
+                const userLocation = this._locationService.getUserLocation();
+                if (!userLocation) {
+                    console.log('No user location, requesting...');
+                    this._locationService.requestGeoLocation();
+                    return;
+                }
+
+                console.log('Centering map on:', userLocation);
+                this._isManualMode = false;
+                this._locationService.setMapLocation(userLocation);
+                this._map.flyTo({
+                    center: [userLocation.lng, userLocation.lat],
+                    zoom: this._initialZoom,
+                    duration: 1000
+                });
+            };
+        });
 
         // Add controls to bottom-left
         this._map.addControl(new mapboxgl.NavigationControl(), 'bottom-left');
