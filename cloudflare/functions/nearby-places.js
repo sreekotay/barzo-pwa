@@ -80,16 +80,40 @@ const API_CONFIG = {
     nearbySearch: (params, key) => 
       `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${params.lat},${params.lng}&radius=${params.radius}&type=${params.type}&key=${key}`,
     placeDetails: (placeId, key) => 
-      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=place_id,name,geometry,formatted_address,formatted_phone_number,website,opening_hours,current_opening_hours,price_level,types,editorial_summary,serves_breakfast,serves_lunch,serves_dinner,serves_brunch,photos(photo_reference)&photosLimit=1&key=${key}`,
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}` +
+      `&fields=place_id,name,geometry,formatted_address,formatted_phone_number,website,opening_hours,current_opening_hours,` +
+      `price_level,types,editorial_summary,serves_breakfast,serves_lunch,serves_dinner,serves_brunch,` +
+      `photos&key=${key}`,
     parseNearbyResults: (data) => data.results,
     parsePlaceDetails: (data) => data.result
   },
   [PROVIDER.MAPBOX]: {
-    nearbySearch: (params, key) => 
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${TYPE_MAPPING[PROVIDER.MAPBOX][params.type]}.json?proximity=${params.lng},${params.lat}&radius=${params.radius}&limit=20&types=poi&access_token=${key}`,
-    placeDetails: (placeId, key) => 
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${placeId}.json?access_token=${key}`,
-    parseNearbyResults: (data) => data.features.map(normalizeMapboxPlace),
+    nearbySearch: (params, apiKey) => 
+        `https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/tilequery/${params.lng},${params.lat}.json?` +
+        `access_token=${apiKey}&` +
+        `radius=${params.radius}&` +  // Use params.radius directly
+        `limit=40&` +
+        `layers=poi_label`,
+    placeDetails: (placeId, apiKey) => 
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${placeId}.json?access_token=${apiKey}`,
+    parseNearbyResults: (data) => {
+        return data.features.map(place => ({
+            place_id: place.id,
+            name: place.properties.name,
+            vicinity: place.properties.address || place.properties.name,
+            geometry: {
+                location: {
+                    lat: place.geometry.coordinates[1],
+                    lng: place.geometry.coordinates[0]
+                }
+            },
+            types: [place.properties.type].filter(Boolean),
+            rating: null,
+            user_ratings_total: null,
+            photos: [],
+            opening_hours: { open_now: null }
+        }));
+    },
     parsePlaceDetails: (data) => normalizeMapboxPlace(data.features[0])
   }
 };
@@ -130,14 +154,14 @@ function normalizeMapboxPlace(place) {
 // At the top, add cache duration constants
 const CACHE_DURATION = {
     PRODUCTION: {
-        KV: 259200,      // 72 hours
-        BROWSER: 7200,   // 2 hours
-        DETAILS: 86400   // 24 hours
+        KV: 604800,      // 1 week (7 * 24 * 60 * 60)
+        BROWSER: 604800,  // 1 week
+        DETAILS: 604800   // 1 week
     },
     DEVELOPMENT: {
-        KV: 60,          // 1 minute
-        BROWSER: 60,     // 1 minute
-        DETAILS: 60      // 1 minute
+        KV: 604800,          // 1 minute
+        BROWSER: 604800,     // 1 minute
+        DETAILS: 604800      // 1 minute
     }
 };
 
@@ -231,7 +255,7 @@ export default {
       }
 
       // Add provider selection
-      const provider = url.searchParams.get("provider") || PROVIDER.GOOGLE; //MAPBOX;
+      const provider = url.searchParams.get("provider") || PROVIDER.GOOGLE//MAPBOX;
       const apiConfig = API_CONFIG[provider];
       
       if (!apiConfig) {
@@ -252,7 +276,7 @@ export default {
       // Use appropriate API key
       const apiKey = provider === PROVIDER.GOOGLE ? 
         (userGoogleKey || env.GOOGLE_PLACES_API_KEY) : 
-        env.MAPBOX_ACCESS_TOKEN;
+        env.MAPBOX_API_KEY;
 
       // Check if this is a place details request
       const placeId = url.searchParams.get("placeId");
@@ -284,6 +308,7 @@ export default {
         const detailsData = await detailsResponse.json();
 
         if (!detailsResponse.ok) {
+          console.error ('Details Url', detailsUrl);
           return new Response(JSON.stringify({
             error: `Failed to fetch place details from ${provider}`,
             details: detailsData
@@ -334,20 +359,15 @@ export default {
       const roundedLng = Math.round(lng * METERS_PER_LNG_DEGREE / GRID.SIZE_METERS) * GRID.SIZE_METERS / METERS_PER_LNG_DEGREE;
 
       // Format cache key with consistent precision
-      const cacheKey = getCacheKey({ 
-        lat: roundedLat, 
-        lng: roundedLng, 
-        radius: roundedRadius, 
-        type: TYPE_MAPPING[provider][type] || type,
-        provider 
-      });
+      const cacheKey = getNearbySearchCacheKey(roundedLat, roundedLng, roundedRadius, type, provider);
       
       // Move this up before any cache operations
       const isDevelopment = request.url.includes('localhost') || request.url.includes('127.0.0.1');
       const cacheDuration = isDevelopment ? CACHE_DURATION.DEVELOPMENT : CACHE_DURATION.PRODUCTION;
 
       // Then in the cac((he check section
-      if (await shouldUseCache()) {
+      const useCache = await shouldUseCache(cacheKey);
+      if (useCache) {
           try {
               let cachedData = await env.PLACES_KV.getWithMetadata(cacheKey, { type: "json" });
               if (cachedData && cachedData.value) {
@@ -387,6 +407,7 @@ export default {
       const searchData = await searchResponse.json();
 
       if (!searchResponse.ok) {
+        console.error ('Search Url', searchUrl);
         console.error('Search response error:', {
           status: searchResponse.status,
           statusText: searchResponse.statusText
@@ -453,7 +474,11 @@ function getCacheKey(params) {
     return `p:${provider[0]}:${lat}:${lng}:${radius}:${type}`;
 }
 
-function getDetailsCacheKey(placeId, provider = PROVIDER.GOOGLE) {
-    // Use short prefix 'd' for details and include provider initial
-    return `d:${provider[0]}:${placeId}`;
+function getDetailsCacheKey(placeId, provider) {
+    return `details:${provider}:${placeId}`;
+}
+
+// Add these helper functions at the top with other constants
+function getNearbySearchCacheKey(lat, lng, radius, type, provider) {
+    return `nearby:${provider}:${lat},${lng}:${radius}:${type}`;
 }

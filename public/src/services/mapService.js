@@ -95,6 +95,7 @@ class MapService {
 
         /** @type {Function[]} */
         this._mapReadyCallbacks = [];
+        this._mapInitialized = false;  // Add this flag
 
         this._autocompletePlaceCallbacks = [];
 
@@ -150,6 +151,8 @@ class MapService {
         );
 
         this._geocodedLocation = null;
+
+        this.debugMode = localStorage.getItem('mapDebug') === 'true';
     }
 
     /**
@@ -178,57 +181,35 @@ class MapService {
         });
         document.getElementById(this._mapContainer).classList.add('map-loaded');
 
-        // Call any queued callbacks once map is loaded
+        // Update map ready handling
         this._map.on('load', () => {
+            console.log('Map loaded, running callbacks...');
+            this._mapInitialized = true;
             this._mapReadyCallbacks.forEach(callback => callback());
-            this._mapReadyCallbacks = []; // Clear the queue
+            this._mapReadyCallbacks = [];
+
+            // Set up the center function after map is initialized
+            window.centerOnUserLocation = () => {
+                const userLocation = this._locationService.getUserLocation();
+                if (!userLocation) {
+                    console.log('No user location, requesting...');
+                    this._locationService.requestGeoLocation();
+                    return;
+                }
+
+                console.log('Centering map on:', userLocation);
+                this._isManualMode = false;
+                this._locationService.setMapLocation(userLocation);
+                this._map.flyTo({
+                    center: [userLocation.lng, userLocation.lat],
+                    zoom: this._initialZoom,
+                    duration: 1000
+                });
+            };
         });
 
         // Add controls to bottom-left
         this._map.addControl(new mapboxgl.NavigationControl(), 'bottom-left');
-
-        // Add custom center control to bottom-left
-        const centerControl = new mapboxgl.NavigationControl({
-            showCompass: false,
-            showZoom: false,
-            visualizePitch: false
-        });
-
-        // Add custom center button
-        const centerButton = document.createElement('button');
-        centerButton.className = 'mapboxgl-ctrl-icon mapboxgl-ctrl-center';
-        centerButton.setAttribute('aria-label', 'Center map on your location');
-        centerButton.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="8"></circle>
-                <line x1="12" y1="2" x2="12" y2="4"></line>
-                <line x1="12" y1="20" x2="12" y2="22"></line>
-                <line x1="2" y1="12" x2="4" y2="12"></line>
-                <line x1="20" y1="12" x2="22" y2="12"></line>
-                <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-        `;
-
-        // Add back the click handler
-        centerButton.addEventListener('click', () => {
-            this._locationService.resetMapLocation();
-            const location = this._locationService.getMapLocation();
-            if (location) {
-                this._map.flyTo({
-                    center: [location.lng, location.lat],
-                    zoom: this._initialZoom
-                });
-            }
-        });
-
-        // Add the button to a control container
-        const container = document.createElement('div');
-        container.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
-        container.appendChild(centerButton);
-        this._map.addControl({
-            onAdd: () => container,
-            onRemove: () => container.remove()
-        }, 'bottom-left');  // Specify bottom-left position
 
         // Initialize user marker (green dot)
         const userMarkerElement = document.createElement('div');
@@ -1293,6 +1274,19 @@ class MapService {
     _onLocationChange(location) {
         this._geocodedLocation = null; // Clear cached location
         // ... rest of existing location change handling
+    }
+
+    setDebugMode(enabled) {
+        this.debugMode = enabled;
+        if (enabled) {
+            console.log('Map Debug Mode Enabled');
+            // Add any debug-specific initialization
+        }
+    }
+
+    async searchNearbyPlaces(location, radius = 500) {
+        const apiUrl = this.debugMode ? 'http://localhost:8787' : 'https://nearby-places-worker.sree-35c.workers.dev';
+        // ... rest of method
     }
 }
 

@@ -293,7 +293,7 @@ class ProfileComponent {
 
         // Add click handler to navigate to profile
         profilePic.addEventListener('click', () => {
-            window.location.hash = 'profile';
+            window.location.hash = 'profile##';
         });
     }
 

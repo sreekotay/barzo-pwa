@@ -1,8 +1,8 @@
 import MarkerManager from '../services/markerManager.js';
 import CarouselComponent from './carouselComponent.js';
 
-const PLACES_API_URL = 'https://nearby-places-worker.sree-35c.workers.dev'; // prod
-//const PLACES_API_URL = 'http://localhost:8787'; // debug
+//const PLACES_API_URL = 'https://nearby-places-worker.sree-35c.workers.dev'; // prod
+const PLACES_API_URL = 'http://localhost:8787'; // debug
 
 export default class PlacesComponent {
     constructor(mapService, locationService, containerSelector, config = {}) {
@@ -513,10 +513,15 @@ export default class PlacesComponent {
                 
                 const place = this._currentPlaces.find(p => p.place_id === placeId);
                 if (place) {
-                    this._showPlaceDetails(place);
+                    this.handlePlaceClick(place);
                 }
             });
         });
+    }
+
+    handlePlaceClick(place) {
+        // Just use the place route without appending current route
+        window.location.hash = `place?id=${place.place_id}##`;
     }
 
     async _showPlaceDetails(place) {
@@ -563,140 +568,20 @@ export default class PlacesComponent {
             return;
         }
 
-        // Get current day name in lowercase
-        const today = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
-        
         // Update content
         detailsDiv.innerHTML = `
             ${place.photos && place.photos.length > 0 ? `
                 <div class="place-image">
                     <img 
-                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this.serverKey || this._mapService._googleApiKey}"
+                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${place.photos[0].photo_reference}&key=${this.serverKey || this._mapService._googleApiKey}"
                         alt="${place.name}"
                         loading="lazy"
                         class="w-full h-48 object-cover"
                     >
                 </div>
             ` : ''}
-            
-            <div class="p-4">
-                <div class="types-scroll nowrap mb-1">
-                    ${(place.types || [])
-                        .filter(type => !['point_of_interest', 'establishment'].includes(type))
-                        .map(type => `
-                            <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>
-                        `).join('<span class="text-gray-300 text-xs mx-1">|</span>')}
-                </div>
-                
-                <h2 class="text-xl font-semibold">${place.name}</h2>
-                
-                <div class="flex items-center gap-2 mb-4">
-                    <div class="status ${details.current_opening_hours?.open_now ? 'open' : 'closed'}">
-                        ${details.current_opening_hours?.open_now ? 'OPEN' : 'CLOSED'}
-                    </div>
-                    ${details.price_level ? `
-                        <div class="text-gray-500 text-xs">${'$'.repeat(details.price_level)}</div>
-                    ` : ''}
-                    ${place.formattedDistance ? `
-                        <div class="text-gray-500 text-xs">${place.formattedDistance}</div>
-                    ` : ''}
-                </div>
-
-                <div class="border-t border-gray-200 -mx-4"></div>
-            </div>
-
-            <div class="px-4 pb-4">
-                ${details.editorial_summary?.overview ? `
-                    <div class="text-gray-900 text-sm mb-4">
-                        ${details.editorial_summary.overview}
-                    </div>
-                ` : ''}
-
-                <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                    <div class="font-medium text-gray-400">NEIGHBORHOOD</div>
-                    <div class="text-gray-900">${
-                        details.address_components?.find(c => c.types.includes('neighborhood'))?.long_name || 
-                        'Location not specified'
-                    }</div>
-
-                    <div class="font-medium text-gray-400">ADDRESS</div>
-                    <div class="text-gray-900">${details.vicinity || place.vicinity}</div>
-
-                    <div class="font-medium text-gray-400">STATUS</div>
-                    <div class="text-gray-900">
-                        ${details.current_opening_hours?.open_now ? 
-                            '<span class="text-green-600 font-medium">Open Now</span>' : 
-                            '<span class="text-red-600 font-medium">Closed</span>'
-                        }
-                    </div>
-                    ${details.current_opening_hours?.weekday_text?.map(day => {
-                        const [dayName, hours] = day.split(': ');
-                        return `<div class="text-gray-400 justify-self-end">${dayName.slice(0,3)}</div>
-                                <div class="text-gray-900">${hours}</div>`;
-                    }).join('')}
-
-                    ${place.hours ? `
-                        <div class="font-medium text-gray-400">HOURS</div>
-                        <div class="text-gray-600 space-y-0.5">
-                            ${Object.entries(place.hours).map(([day, ranges]) => {
-                                const timeRanges = ranges?.map(range => {
-                                    const start = range.start.replace(/(\d{2})(\d{2})/, '$1:$2');
-                                    const end = range.end.replace(/(\d{2})(\d{2})/, '$1:$2');
-                                    return `${start}-${end}`;
-                                }).join(', ') || 'Closed';
-                                return `<div class="${day === today ? 'font-medium' : ''}">${day.slice(0,2).toUpperCase()}: ${timeRanges}</div>`;
-                            }).join('')}
-                        </div>
-                    ` : ''}
-
-                    ${details.serves_breakfast || details.serves_lunch || details.serves_dinner ? `
-                        <div class="font-medium text-gray-400">SERVES</div>
-                        <div class="flex flex-wrap gap-1">
-                            ${details.serves_breakfast ? '<span class="text-gray-600">Breakfast</span>' : ''}
-                            ${details.serves_lunch ? '<span class="text-gray-600">Lunch</span>' : ''}
-                            ${details.serves_dinner ? '<span class="text-gray-600">Dinner</span>' : ''}
-                            ${details.serves_brunch ? '<span class="text-gray-600">Brunch</span>' : ''}
-                        </div>
-                    ` : ''}
-
-                    ${details.price_level ? `
-                        <div class="font-medium text-gray-400">PRICE</div>
-                        <div class="text-gray-900">${'$'.repeat(details.price_level)}</div>
-                    ` : ''}
-
-                    ${details?.formatted_phone_number ? `
-                        <div class="font-medium text-gray-400">CONTACT</div>
-                        <div>
-                            <a href="tel:${details.formatted_phone_number}" class="text-blue-600 hover:text-blue-800">
-                                ${details.formatted_phone_number}
-                            </a>
-                        </div>
-                    ` : ''}
-
-                    ${details?.website ? `
-                        <div class="font-medium text-gray-400">WEBSITE</div>
-                        <div>
-                            <a href="${details.website}" target="_blank" class="text-blue-600 hover:text-blue-800">
-                                ${new URL(details.website).hostname}
-                            </a>
-                        </div>
-                    ` : ''}
-                </div>
-            </div>
+            <!-- Rest of the content -->
         `;
-
-        // Reset animation state without triggering close handler
-        sheet.classList.remove('active');
-        backdrop.classList.remove('active');
-
-        // Force reflow
-        void sheet.offsetHeight;
-
-        // Show the sheet again
-        requestAnimationFrame(() => {
-            sheet.classList.add('active');
-            backdrop.classList.add('active');
-        });
     }
 
     async _fetchPlaceDetails(placeId) {
@@ -763,3 +648,60 @@ export default class PlacesComponent {
         return distance <= threshold;
     }
 } 
+
+// Export showPlaceDetails for use by other components
+export function showPlaceDetails(place) {
+    const formattedTypes = (place.types || [])
+        .filter(type => !['point_of_interest', 'establishment'].includes(type))
+        .map(type => type.replace(/_/g, ' '))
+        .join(', ') || 'Business';
+
+    const content = `
+        ${place.photos && place.photos.length > 0 ? `
+        <div class="photos">
+            <div class="photo-grid">
+                ${place.photos.map(photo => `
+                    <img 
+                        src="https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${mapService._googleApiKey}"
+                        alt="${place.name}"
+                        loading="lazy"
+                    >
+                `).join('')}
+            </div>
+        </div>
+        ` : ''}
+        <div class="content-grid">
+            <div class="main-info">
+                <div class="place-type">${formattedTypes}</div>
+                <h2 class="name">${place.name || 'Unnamed Location'}</h2>
+            </div>
+
+            <div class="info-row">
+                <span class="material-icons">schedule</span>
+                ${place.opening_hours?.open_now !== undefined
+                    ? `<span class="${place.opening_hours.open_now ? 'open' : 'closed'}">${place.opening_hours.open_now ? 'OPEN' : 'CLOSED'}</span>`
+                    : `<span class="unknown">Status unknown</span>`
+                }
+            </div>
+
+            <div class="info-row">
+                <span class="material-icons">place</span>
+                <span>${place.vicinity || 'Address not available'}</span>
+            </div>
+
+            ${place.rating ? `
+                <div class="info-row">
+                    <span class="material-icons">star</span>
+                    <span>${place.rating} ⭐️ (${place.user_ratings_total || 0})</span>
+                </div>
+            ` : ''}
+        </div>
+    `;
+
+    sheetComponent.show(content, {
+        maxHeight: '90vh',
+        closeOnSwipe: true,
+        closeOnBackdrop: true,
+        className: 'place-details-sheet'
+    });
+}
