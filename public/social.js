@@ -11,11 +11,134 @@ let router;
 let currentPlaces = [];
 let currentIntersectionObserver = null;
 let isUpdating = false;
+let messageMarkersLayer = null;
 
 async function getClientKeys() {
     const response = await fetch('/api/getClientKeys');
     const data = await response.json();
     return data;
+}
+
+function jitterCoordinate(coord, meters) {
+    // Convert meters to approximate degrees (rough approximation)
+    // 111,111 meters = 1 degree at equator
+    const jitterDegrees = meters / 111111;
+    return coord + (Math.random() - 0.5) * jitterDegrees * 2; // multiply by 2 to get full range
+}
+
+async function createMessageMarkers() {
+    try {
+        // Debug session status
+        const { data: { session }, error: sessionError } = await mapService._supabase.auth.getSession();
+        console.log('Supabase Session:', {
+            exists: !!session,
+            error: sessionError,
+            user: session?.user,
+            token: session?.access_token?.slice(0, 20) + '...'
+        });
+
+        if (!session) {
+            console.error('No valid Supabase session');
+            return;
+        }
+
+        // Remove existing message markers layer if it exists
+        if (messageMarkersLayer) {
+            mapService._map.removeLayer(messageMarkersLayer);
+        }
+
+        // Fetch messages from Supabase
+        const { data: messages, error } = await mapService._supabase
+            .from('messages')
+            .select('*');
+
+        if (error) {
+            console.error('Supabase query error:', error);
+            throw error;
+        }
+
+        if (!messages || messages.length === 0) {
+            console.log('No messages found - this might be an RLS issue');
+            return;
+        }
+
+        // Create GeoJSON features with jittered coordinates
+        const features = messages.map(msg => ({
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [
+                    jitterCoordinate(msg.longitude, 50),
+                    jitterCoordinate(msg.latitude, 50)
+                ]
+            },
+            properties: {
+                weight: 1
+            }
+        }));
+
+        // Add heatmap layer
+        messageMarkersLayer = mapService._map.addLayer({
+            id: 'messages-heat',
+            type: 'heatmap',
+            source: {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: features
+                }
+            },
+            paint: {
+                // Increase weight as zoom level increases
+                'heatmap-weight': [
+                    'interpolate',
+                    ['linear'],
+                    ['get', 'weight'],
+                    0, 0,
+                    1, 1
+                ],
+                // Increase intensity as zoom level increases
+                'heatmap-intensity': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    0, 1,
+                    9, 3
+                ],
+                // Red color scheme for the heatmap
+                'heatmap-color': [
+                    'interpolate',
+                    ['linear'],
+                    ['heatmap-density'],
+                    0, 'rgba(255,255,255,0)',
+                    0.2, 'rgb(255,247,236)',
+                    0.4, 'rgb(254,232,200)',
+                    0.6, 'rgb(253,212,158)',
+                    0.8, 'rgb(253,187,132)',
+                    1, 'rgb(252,141,89)'
+                ],
+                // Adjust the heatmap radius by zoom level
+                'heatmap-radius': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    0, 2,
+                    9, 20
+                ],
+                // Transition from heatmap to circle layer by zoom level
+                'heatmap-opacity': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    7, 1,
+                    9, 0.5
+                ]
+            }
+        });
+
+    } catch (error) {
+        console.error('Error creating message heatmap:', error);
+    }
 }
 
 async function startupThisApp() {
@@ -36,38 +159,23 @@ async function startupThisApp() {
         searchInput: 'search-container',
         searchInputLevel: 'neighborhood'
     });
-    mapService._supabase = supabase.createClient(clientKeys.supabaseUrl, clientKeys.supabaseAnonKey);
 
     if (!localStorage.getItem('authToken')) {
         window.location.href = '/legacy.html?redirect=' + encodeURIComponent(window.location.href);
     }
 
-    mapService.initialize();
-    
-    // Initialize profile component for header icon
-    window.profileComponent = new ProfileComponent();
-    
-    // Initialize router
-    router = new Router(mapService);
-    // Make router globally accessible immediately after creation
-    window.router = router;
-    
-    // Handle initial route
-    const path = window.location.hash.slice(1) || 'home';
-    router.handleRoute(path);
-    
-    // Handle route changes
-    window.addEventListener('hashchange', () => {
-        const path = window.location.hash.slice(1) || 'home';
-        router.handleRoute(path);
-    });
+    mapService._supabase = supabase.createClient(clientKeys.supabaseUrl, clientKeys.supabaseAnonKey);
+    const supabaseSession = localStorage.getItem('supabaseSessionJWT');
+    if (supabaseSession) {
+        const session = JSON.parse(supabaseSession);
+        await mapService._supabase.auth.setSession(session.access_token);
+    }
 
-    // Update places change callback to store data
+    // Register callbacks before map initialization
     mapService.onPlacesChange((places) => {
         currentPlaces = places;
     });
 
-    // Update marker click handler
     mapService.onMarkerClick((place) => {
         if (isUpdating) return;
         isUpdating = true;
@@ -99,6 +207,28 @@ async function startupThisApp() {
             isUpdating = false;
         }, 100);
     });
+
+    // Now initialize the map
+    mapService.initialize();
+    createMessageMarkers(); // should be async
+    
+    // Initialize profile component for header icon
+    window.profileComponent = new ProfileComponent();
+    
+    // Initialize router
+    router = new Router(mapService);
+    // Make router globally accessible immediately after creation
+    window.router = router;
+    
+    // Handle initial route
+    const path = window.location.hash.slice(1) || 'home';
+    router.handleRoute(path);
+    
+    // Handle route changes
+    window.addEventListener('hashchange', () => {
+        const path = window.location.hash.slice(1) || 'home';
+        router.handleRoute(path);
+    });
 }
 
 // Update the initialize function
@@ -115,17 +245,6 @@ export async function initialize() {
                 closeMenu();
             }
 
-            // If this is a sheet route with ##, handle it specially
-            if (link.getAttribute('href').endsWith('##')) {
-                e.preventDefault();
-                const currentHash = window.location.hash.slice(1);
-                const currentRoute = currentHash.includes('##') 
-                    ? currentHash.split('##')[1]  // If we're in a sheet, use its underlying route
-                    : currentHash || 'home';      // Otherwise use current route or home
-                
-                const newRoute = link.getAttribute('href').slice(1, -2); // Remove # and ##
-                window.location.hash = `${newRoute}##${currentRoute}`;
-            }
         });
     });
 

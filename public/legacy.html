@@ -43,19 +43,26 @@
                 const { data, error } = await supabase.functions.invoke('external-auth', {
                     body: {
                         externalToken: {
-                        id: globalAuthToken.token.identity.userId,
-                        bearer: globalAuthToken.token.accessToken,
-                        env: 'prod' // or 'prod'
+                            id: globalAuthToken.token.identity.userId,
+                            bearer: globalAuthToken.token.accessToken,
+                            env: 'prod' // or 'prod'
                         }
                     }
-                    });
+                });
 
                 if (error) {
                     console.error('Error:', error);
                     return;
-                    }
+                }
 
                 console.log('Success:', data);
+
+                // Store Supabase session
+                if (data) {
+                    await supabase.auth.setSession(data.access_token);
+                    console.log ("supabasUser", await supabase.auth.getUser());
+                    localStorage.setItem('supabaseSessionJWT', JSON.stringify(data));
+                }
 
                 if (error) throw error;
                 console.log('User provisioned and logged in:', data);
@@ -117,7 +124,7 @@
 
         // Modify the existing getUserInfo function to include provisioning
         async function getUserInfo() {
-            const userInfo = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}`);
+            //const userInfo = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}`);
             // ----------------
             // other examples
             // ----------------
@@ -126,6 +133,7 @@
             //const userInfo = await apiCall('POST', `/v1/venues/all`, {page:1, limit:300});
             //const userInfo = await apiCall('GET', `v1/feeds/fyp?latitude=27.964157&longitude=-82.452606&radiusInFeet=30000&userId=${globalAuthToken.token.identity.userId}`);
             //const userInfo = await apiCall('GET', `v1/feeds/places/events?latitude=27.964157&longitude=-82.452606&radiusInFeet=300000&userId=${globalAuthToken.token.identity.userId}`);
+            const userInfo = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}/resources`);
             await provisionSupabaseUser(); // Add user provisioning
             console.log(JSON.stringify(userInfo, null, 2));
             return userInfo;
@@ -153,6 +161,7 @@
                 globalAuthToken = JSON.parse(decodeURIComponent(authToken));
                 localStorage.setItem('authToken', authToken);
                 const redirect = localStorage.getItem('redirect_LEGACY');
+
                 
                 // If we have an authToken in URL, remove it and redirect
                 if (!redirect && getQueryParam('authToken')) {

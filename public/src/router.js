@@ -61,7 +61,7 @@ export default class Router {
                 window.history.replaceState(
                     null, 
                     '', 
-                    `#${basePath}${params ? '?' + params : ''}##${this.routeStack[this.currentSheetDepth - 1]}`
+                    `#${basePath}${params ? '?' + params : ''}`
                 );
             }
 
