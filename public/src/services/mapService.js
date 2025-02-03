@@ -182,7 +182,8 @@ class MapService {
             bearing: 0,
             scrollZoom: {
                 around: 'center'
-            }
+            },
+            backgroundColor: 'rgb(11, 11, 25)'  // Match the space-color from fog settings
         });
         document.getElementById(this._mapContainer).classList.add('map-loaded');
 
