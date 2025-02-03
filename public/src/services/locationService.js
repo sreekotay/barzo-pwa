@@ -305,9 +305,7 @@ class LocationService {
         if (typeof value !== 'boolean') {
             throw new Error('isDebugLocation must be a boolean');
         }
-        
-        console.log('Setting debug mode:', value); // Add logging
-        
+                
         const previousValue = this._isDebugLocation;
         this._isDebugLocation = value;
         this._persistState();

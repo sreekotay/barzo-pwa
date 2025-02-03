@@ -44,10 +44,8 @@ class ProfileComponent {
             }
 
             this.userData = await response.json();
-            console.log('User Profile Data:', this.userData);
             
             // Dispatch event when data is loaded
-            console.log('Dispatching profileDataLoaded event');
             document.dispatchEvent(this.dataLoadedEvent);
             
             // Only update header pic here, let the event handler update the profile UI
