@@ -13,20 +13,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        red: {
-                            500: '#f51324',
-                            600: '#d81020', // slightly darker for hover states
-                        }
-                    }
-                }
-            }
-        }
-    </script>
     <style>
         @import url('https://fonts.cdnfonts.com/css/bagnard-sans');
 
@@ -155,7 +141,7 @@
 
     <script type="module">
         import { initialize } from '/social.js';
-        document.addEventListener('DOMContentLoaded', initialize);
+        window.addEventListener('DOMContentLoaded', () => initialize());
     </script>
 </body>
 </html>

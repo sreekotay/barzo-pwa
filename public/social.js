@@ -250,6 +250,9 @@ export async function initialize() {
     });
 
     initMapResize();
+
+    // Add this line at the end
+    window.initialize = initialize;
 }
 
 function initMapResize() {
