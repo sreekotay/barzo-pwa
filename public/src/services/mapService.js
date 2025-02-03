@@ -173,12 +173,6 @@ class MapService {
         this._map = new mapboxgl.Map({
             container: this._mapContainer,
             style: 'mapbox://styles/mapbox/dark-v10',
-            background: {
-                type: 'background',
-                paint: {
-                    'background-color': 'rgb(11, 11, 25)'
-                }
-            },
             zoom: shouldAnimate ? 1 : this._initialZoom,
             center: shouldAnimate ? [138.2529, 36.2048] : [initialCenter.lng, initialCenter.lat],
             attributionControl: false,

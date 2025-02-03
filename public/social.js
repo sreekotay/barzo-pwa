@@ -232,26 +232,25 @@ async function startupThisApp() {
     });
 }
 
-// Remove the export
-async function initialize() {
+// Update the initialize function
+export async function initialize() {
     await startupThisApp();
     locationService.requestGeoLocation();
     const { closeMenu } = initializeMobileMenu();
     
+    // Setup navigation links
     document.querySelectorAll('a[href^="#"]').forEach(link => {
         link.addEventListener('click', (e) => {
             const isMobile = window.innerWidth < 1024;
             if (isMobile) {
                 closeMenu();
             }
+
         });
     });
 
     initMapResize();
 }
-
-// Make it globally available
-window.initialize = initialize;
 
 function initMapResize() {
     const mapElement = document.getElementById('map');
