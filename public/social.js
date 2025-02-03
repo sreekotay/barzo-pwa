@@ -105,17 +105,17 @@ async function createMessageMarkers() {
                     0, 1,
                     9, 3
                 ],
-                // Red color scheme for the heatmap
+                // Cool green gradient for the heatmap
                 'heatmap-color': [
                     'interpolate',
                     ['linear'],
                     ['heatmap-density'],
                     0, 'rgba(255,255,255,0)',
-                    0.2, 'rgb(255,247,236)',
-                    0.4, 'rgb(254,232,200)',
-                    0.6, 'rgb(253,212,158)',
-                    0.8, 'rgb(253,187,132)',
-                    1, 'rgb(252,141,89)'
+                    0.2, 'rgb(240,253,244)',  // Lightest green
+                    0.4, 'rgb(187,247,208)',  // Light green
+                    0.6, 'rgb(134,239,172)',  // Medium green
+                    0.8, 'rgb(34,197,94)',    // Bright green
+                    1, 'rgb(21,128,61)'       // Dark green
                 ],
                 // Adjust the heatmap radius by zoom level
                 'heatmap-radius': [

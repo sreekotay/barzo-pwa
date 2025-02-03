@@ -1,8 +1,22 @@
+import locationService from '../services/locationService.js';
+
 export default class SettingsPage {
     constructor() {
         this.settings = {
             mapDebug: localStorage.getItem('mapDebug') === 'true'
         };
+        
+        // Initialize debug state on load
+        if (this.settings.mapDebug) {
+            locationService.setIsDebugLocation(true);
+            locationService.setDebugUserLocation({
+                lat: 27.9478,  // 400 N St Tampa coordinates
+                lng: -82.4584
+            });
+        } else {
+            // Ensure debug mode is off on initialization if not enabled
+            locationService.setIsDebugLocation(false);
+        }
     }
 
     async render() {
@@ -13,7 +27,7 @@ export default class SettingsPage {
                 <div class="space-y-4">
                     <!-- Debug Mode Toggle -->
                     <div class="flex items-center justify-between">
-                        <label class="text-gray-700">Map Debug Mode</label>
+                        <label class="text-gray-700">Debug Mode</label>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" id="mapDebug" 
                                 class="sr-only peer" 
@@ -38,7 +52,11 @@ export default class SettingsPage {
             mapDebugToggle.addEventListener('change', (e) => {
                 this.settings.mapDebug = e.target.checked;
                 localStorage.setItem('mapDebug', e.target.checked);
+                
+                // Set debug mode and refresh the page
                 window.mapService?.setDebugMode(e.target.checked);
+                locationService.setIsDebugLocation(e.target.checked);
+                window.location.reload();
             });
         }
     }

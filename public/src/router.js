@@ -8,10 +8,11 @@ export default class Router {
         this.mapService = mapService;
         this.currentPage = null;
         this.routes = {
-            home: () => new HomePage(this.mapService),
-            profile: () => new ProfilePage(),
-            settings: () => new SettingsPage(),
-            place: () => new PlaceDetailsPage(this.mapService)
+            '': () => new HomePage(this.mapService),
+            'home': () => new HomePage(this.mapService),
+            'settings': () => new SettingsPage(),
+            'profile': () => new ProfilePage(),
+            'place': () => new PlaceDetailsPage(this.mapService)
         };
         
         this.sheetRoutes = new Set(['place', 'profile']);
@@ -29,7 +30,7 @@ export default class Router {
         });
     }
 
-    async handleRoute(route = 'home') {
+    async handleRoute(route = '') {
         const [mainRoute, underlyingRoute] = route.split('##');
         
         // Parse the main route and params, handling the case where params are part of a sheet route
@@ -48,7 +49,8 @@ export default class Router {
         const getPage = this.routes[basePath];
         
         if (!getPage) {
-            return this.handleRoute('home');
+            window.location.hash = '';
+            return;
         }
 
         this.currentPage = getPage();

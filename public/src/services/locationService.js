@@ -150,12 +150,22 @@ class LocationService {
 
     // User Location
     getUserLocation() {
-        return this._isDebugLocation ? this._debugUserLocation : this._userLocation;
+        // If in debug mode and we have a debug location, use it
+        if (this._isDebugLocation && this._debugUserLocation) {
+            return this._debugUserLocation;
+        }
+        // Otherwise return actual user location
+        return this._userLocation;
     }
 
     // User Location Cached
     getUserLocationCached() {
-        return this._isDebugLocation ? this._debugUserLocation : this._userLocationCached;
+        // If in debug mode and we have a debug location, use it
+        if (this._isDebugLocation && this._debugUserLocation) {
+            return this._debugUserLocation;
+        }
+        // Otherwise return cached location
+        return this._userLocationCached;
     }
 
     // User Location Cached Timestamp
@@ -172,8 +182,21 @@ class LocationService {
         if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
             throw new Error('Invalid location format. Expected {lat: number, lng: number}');
         }
+        
+        console.log('Setting debug location:', location); // Add logging
+        
         this._debugUserLocation = location;
         this._persistState();
+
+        // If in debug mode, trigger location updates
+        if (this._isDebugLocation) {
+            this._triggerUserLocationCallbacks(location);
+            
+            // If not in manual map mode, update map location too
+            if (!this._isManualMap) {
+                this._triggerMapLocationCallbacks(location);
+            }
+        }
     }
 
     // Map Location - return the user location, unless we are in manual mode or we don't have a user location
@@ -282,8 +305,26 @@ class LocationService {
         if (typeof value !== 'boolean') {
             throw new Error('isDebugLocation must be a boolean');
         }
+        
+        console.log('Setting debug mode:', value); // Add logging
+        
+        const previousValue = this._isDebugLocation;
         this._isDebugLocation = value;
         this._persistState();
+
+        // If debug mode changed, trigger appropriate callbacks
+        if (previousValue !== value) {
+            const currentLocation = this.getUserLocation();
+            if (currentLocation) {
+                // Trigger user location callbacks with the new effective location
+                this._triggerUserLocationCallbacks(currentLocation);
+                
+                // If not in manual map mode, update map location too
+                if (!this._isManualMap) {
+                    this._triggerMapLocationCallbacks(currentLocation);
+                }
+            }
+        }
     }
 
     /**
@@ -349,6 +390,13 @@ class LocationService {
      * @returns {Promise<LatLng>} A promise that resolves with the user's location
      */
     async requestGeoLocation() {
+        // If in debug mode and we have a debug location, return it immediately
+        if (this._isDebugLocation && this._debugUserLocation) {
+            this._userLocationStatus = UserLocationStatus.GRANTED;
+            this._triggerUserLocationCallbacks(this._debugUserLocation);
+            return this._debugUserLocation;
+        }
+
         if (!navigator.geolocation) {
             this._userLocationStatus = UserLocationStatus.DENIED;
             throw new Error('Geolocation is not supported by your browser');
