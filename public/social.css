@@ -782,8 +782,8 @@ footer {
     right: 1rem;
     top: 60%;  /* Move it down a bit */
     transform: translateY(-50%);
-    width: 32px;
-    height: 32px;
+    width: 64px;
+    height: 64px;
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     animation: profileEnter 0.8s cubic-bezier(0.2, 1.8, 0.3, 1);
