@@ -39,14 +39,7 @@ app.get(['/service-worker.js'], (req, res) => {
 });
 
 // Move this BEFORE the helmet middleware
-app.use(express.static('public', {
-  maxAge: NODE_ENV === 'production' ? '1d' : 0,
-  setHeaders: (res, path) => {
-    if (path.endsWith('service-worker.js')) {
-      res.set('Service-Worker-Allowed', '/');
-    }
-  }
-}));
+app.use(express.static('public'));
 
 // Security headers middleware using helmet
 app.use(helmet({

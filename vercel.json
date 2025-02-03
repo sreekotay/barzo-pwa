@@ -16,16 +16,8 @@
   ],
   "routes": [
     {
-      "src": "/dist/(.*)",
-      "dest": "/dist/$1"
-    },
-    {
-      "src": "^/(.+\\.(js|css|html|png|jpg|jpeg|gif|ico|json))$",
-      "dest": "/public/$1"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/server.js"
+      "dest": "server.js"
     }
   ],
   "env": {
