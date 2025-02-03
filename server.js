@@ -20,6 +20,9 @@ const corsHeaders = {
 // Middleware
 app.use(express.json());
 
+// Move static file serving to the top, before all other middleware
+app.use(express.static('public'));
+
 // Handle both service workers
 app.get(['/service-worker.js'], (req, res) => {
   res.set({
@@ -37,9 +40,6 @@ app.get(['/service-worker.js'], (req, res) => {
   const filePath = path.join(__dirname, 'public', 'service-worker.js');
   res.sendFile(filePath);
 });
-
-// Move this BEFORE the helmet middleware
-app.use(express.static('public'));
 
 // Security headers middleware using helmet
 app.use(helmet({
@@ -203,9 +203,16 @@ app.post('/api/notify', async (req, res, next) => {
   }
 });
 
-// Serve index.html for all other routes
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// Update the catch-all route at the bottom
+app.get('*', (req, res) => {
+    // Try to send the requested file from public directory
+    const filePath = path.join(__dirname, 'public', req.path);
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+    } else {
+        // If file doesn't exist, send index.html
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    }
 });
 
 // Export the Express API for Vercel
