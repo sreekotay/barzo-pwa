@@ -139,9 +139,9 @@
         </div>
     </div>
 
-    <script type="module">
-        import { initialize } from '/social.js';
-        window.addEventListener('DOMContentLoaded', () => initialize());
+    <script src="/social.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => window.initialize());
     </script>
 </body>
 </html>

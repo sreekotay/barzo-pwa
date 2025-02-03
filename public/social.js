@@ -232,7 +232,7 @@ async function startupThisApp() {
     });
 }
 
-// Export the initialize function properly
+// Remove the export
 async function initialize() {
     await startupThisApp();
     locationService.requestGeoLocation();
@@ -250,8 +250,8 @@ async function initialize() {
     initMapResize();
 }
 
-// Export the function
-export { initialize };
+// Make it globally available
+window.initialize = initialize;
 
 function initMapResize() {
     const mapElement = document.getElementById('map');
