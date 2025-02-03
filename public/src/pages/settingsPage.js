@@ -41,6 +41,15 @@ export default class SettingsPage {
                             </div>
                         </label>
                     </div>
+
+                    <!-- Reset Animation Button -->
+                    <div class="flex items-center justify-between">
+                        <label class="text-gray-700">Reset Globe Animation</label>
+                        <button id="resetAnimation" 
+                            class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors">
+                            Reset
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -57,6 +66,14 @@ export default class SettingsPage {
                 window.mapService?.setDebugMode(e.target.checked);
                 locationService.setIsDebugLocation(e.target.checked);
                 window.location.reload();
+            });
+        }
+
+        const resetButton = document.getElementById('resetAnimation');
+        if (resetButton) {
+            resetButton.addEventListener('click', () => {
+                localStorage.removeItem('lastGlobeAnimation');
+                alert('Globe animation will play on next app load');
             });
         }
     }

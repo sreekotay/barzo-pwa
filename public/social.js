@@ -169,6 +169,7 @@ async function startupThisApp() {
     if (supabaseSession) {
         const session = JSON.parse(supabaseSession);
         await mapService._supabase.auth.setSession(session.access_token);
+        console.log ("supabasUser", await mapService._supabase.auth.getUser());
     }
 
     // Register callbacks before map initialization

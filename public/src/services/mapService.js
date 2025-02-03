@@ -86,8 +86,6 @@ class MapService {
 
         this._placesChangeCallbacks = [];
         this._markerClickCallbacks = [];
-        this._markerSelectCallbacks = [];
-        this._selectedMarkerId = null;
 
         this._onAutocompleteSelect = onAutocompleteSelect;
         this._onMapDrag = onMapDrag;
@@ -159,54 +157,103 @@ class MapService {
      * Initialize the map and optional search
      */
     async initialize() {
-        // Load Mapbox GL JS
         await this._loadMapboxGL();
         
         // Get cached location
         const cachedLocation = this._locationService.getUserLocationCached();
         const initialCenter = cachedLocation || this._defaultCenter;
         
+        // Check if we should do the animation
+        const lastAnimation = localStorage.getItem('lastGlobeAnimation');
+        const shouldAnimate = !lastAnimation || 
+            (Date.now() - parseInt(lastAnimation) > 4 * 60 * 60 * 1000); // 4 hours in milliseconds
+
         // Initialize map
         mapboxgl.accessToken = this._accessToken;
         this._map = new mapboxgl.Map({
             container: this._mapContainer,
             style: 'mapbox://styles/mapbox/dark-v10',
-            zoom: this._initialZoom,
-            center: [initialCenter.lng, initialCenter.lat],
+            zoom: shouldAnimate ? 1 : this._initialZoom,
+            center: shouldAnimate ? [138.2529, 36.2048] : [initialCenter.lng, initialCenter.lat],
             attributionControl: false,
             logoPosition: 'bottom-right',
+            projection: 'globe',
+            pitch: 45,
+            bearing: 0,
             scrollZoom: {
                 around: 'center'
             }
         });
         document.getElementById(this._mapContainer).classList.add('map-loaded');
 
-        // Update map ready handling
-        this._map.on('load', () => {
-            console.log('Map loaded, running callbacks...');
-            this._mapInitialized = true;
-            this._mapReadyCallbacks.forEach(callback => callback());
-            this._mapReadyCallbacks = [];
+        // Create a promise that resolves when both style and map are loaded
+        await new Promise(resolve => {
+            let styleLoaded = false;
+            let mapLoaded = false;
 
-            // Set up the center function after map is initialized
-            window.centerOnUserLocation = () => {
-                const userLocation = this._locationService.getUserLocation();
-                if (!userLocation) {
-                    console.log('No user location, requesting...');
-                    this._locationService.requestGeoLocation();
-                    return;
+            const checkBothLoaded = () => {
+                if (styleLoaded && mapLoaded) {
+                    resolve();
                 }
-
-                console.log('Centering map on:', userLocation);
-                this._isManualMode = false;
-                this._locationService.setMapLocation(userLocation);
-                this._map.flyTo({
-                    center: [userLocation.lng, userLocation.lat],
-                    zoom: this._initialZoom,
-                    duration: 1000
-                });
             };
+
+            this._map.on('style.load', () => {
+                styleLoaded = true;
+                checkBothLoaded();
+            });
+
+            this._map.on('load', () => {
+                mapLoaded = true;
+                checkBothLoaded();
+            });
         });
+
+        // Now safe to set fog and continue with initialization
+        this._map.setFog({
+            'color': 'rgb(186, 210, 235)',
+            'high-color': 'rgb(36, 92, 223)',
+            'horizon-blend': 0.02,
+            'space-color': 'rgb(11, 11, 25)',
+            'star-intensity': 0.6
+        });
+
+        console.log('Map loaded, running callbacks...');
+        this._mapInitialized = true;
+        this._mapReadyCallbacks.forEach(callback => callback());
+        this._mapReadyCallbacks = [];
+
+        // Only animate if enough time has passed
+        if (shouldAnimate && cachedLocation) {
+            setTimeout(() => {
+                this._map.flyTo({
+                    center: [cachedLocation.lng, cachedLocation.lat],
+                    zoom: this._initialZoom,
+                    duration: 3000,  // 3 seconds animation
+                    essential: true
+                });
+                // Store the animation time
+                localStorage.setItem('lastGlobeAnimation', Date.now().toString());
+            }, 1000);
+        }
+
+        // Set up the center function
+        window.centerOnUserLocation = () => {
+            const userLocation = this._locationService.getUserLocation();
+            if (!userLocation) {
+                console.log('No user location, requesting...');
+                this._locationService.requestGeoLocation();
+                return;
+            }
+
+            console.log('Centering map on:', userLocation);
+            this._isManualMode = false;
+            this._locationService.setMapLocation(userLocation);
+            this._map.flyTo({
+                center: [userLocation.lng, userLocation.lat],
+                zoom: this._initialZoom,
+                duration: 1000
+            });
+        };
 
         // Add controls to bottom-left
         this._map.addControl(new mapboxgl.NavigationControl(), 'bottom-left');
@@ -749,24 +796,20 @@ class MapService {
      * @param {Array} places - Array of place results from Google Places API
      */
     _addPlaceMarkers(places) {
-        // Clear existing markers
         this._clearPlaceMarkers();
 
-        places.forEach((place, index) => {
+        places.forEach((place) => {
             if (place.geometry && place.geometry.location) {
-                // Create marker element
                 const el = document.createElement('div');
-                el.className = `place-marker${index === 2 ? ' selected' : ''}`;
+                el.className = 'place-marker';
                 el.style.width = '16px';
                 el.style.height = '16px';
                 el.style.borderRadius = '50%';
-                // Change the closed color to a lighter gray
                 el.style.backgroundColor = place.opening_hours?.open_now ? '#E31C5F' : '#9CA3AF';
                 el.style.border = '2px solid white';
                 el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
                 el.style.cursor = 'pointer';
 
-                // Create and add marker
                 const marker = new mapboxgl.Marker({
                     element: el
                 })
@@ -776,22 +819,17 @@ class MapService {
                 ])
                 .addTo(this._map);
 
-                // Store the place data with the marker
                 marker.placeId = place.place_id;
                 marker.placeData = place;
 
-                // Simplified click handler - just select marker
                 el.addEventListener('click', (e) => {
-                    e.preventDefault(); // Prevent any default handling
-                    console.log('🗺️ Marker clicked:', place.name, '(', place.place_id, ')');
+                    e.preventDefault();
                     this.selectMarker(place.place_id);
                     this._markerClickCallbacks.forEach(callback => callback(place));
                 });
 
-                // Add touch handlers
                 el.addEventListener('touchstart', (e) => {
-                    e.preventDefault(); // Prevent map pan/zoom
-                    console.log('🗺️ Marker touched:', place.name, '(', place.place_id, ')');
+                    e.preventDefault();
                     this.selectMarker(place.place_id);
                     this._markerClickCallbacks.forEach(callback => callback(place));
                 }, { passive: false });
@@ -939,7 +977,7 @@ class MapService {
                 
                 // Sort places by distance if available
                 if (userLocation) {
-                    places.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+                    //places.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
                 }
                 
                 console.log('Processed places with distances:', places);
@@ -972,129 +1010,12 @@ class MapService {
         this._markerClickCallbacks.push(callback);
     }
 
-    onMarkerSelect(callback) {
-        this._markerSelectCallbacks.push(callback);
-    }
-
     selectMarker(placeId) {
-        this._selectedMarkerId = placeId;
         this._placeMarkers.forEach(marker => {
             const markerEl = marker.getElement();
             if (markerEl) {
                 markerEl.classList.toggle('selected', marker.placeId === placeId);
             }
-        });
-        
-        // Only dispatch event if there's a selected marker
-        if (placeId) {
-            const event = new CustomEvent('markerSelect', {
-                bubbles: true,
-                detail: placeId
-            });
-            this._map.getContainer().dispatchEvent(event);
-        }
-    }
-
-    // Replace _fetchNearbyPlaces with a generic method to add POI markers
-    addPOIMarkers(pois, options = {}) {
-        // Create a map of existing markers by ID
-        const existingMarkers = new Map();
-        this._placeMarkers.forEach(marker => {
-            existingMarkers.set(marker.poiId || marker.placeId, marker);
-        });
-
-        // Track new markers
-        const newMarkers = [];
-
-        pois.forEach((poi, index) => {
-            const poiId = poi.id || poi.place_id;
-            if (poi.geometry && poi.geometry.location) {
-                let marker = existingMarkers.get(poiId);
-                
-                if (marker) {
-                    // Update existing marker position if needed
-                    marker.setLngLat([
-                        poi.geometry.location.lng,
-                        poi.geometry.location.lat
-                    ]);
-                    existingMarkers.delete(poiId);
-                } else {
-                    // Create marker element with initial styles
-                    const el = document.createElement('div');
-                    el.className = `poi-marker ${options.markerClass || ''}`;
-                    el.style.cssText = `
-                        width: 16px;
-                        height: 16px;
-                        border-radius: 50%;
-                        background-color: ${options.getMarkerColor?.(poi) || '#666666'};
-                        border: 2px solid white;
-                        box-shadow: 0 0 4px rgba(0,0,0,0.3);
-                        cursor: pointer;
-                        opacity: 0;
-                        transition: opacity 0.3s ease-in-out;
-                    `;
-
-                    // Create marker but don't add to map yet
-                    marker = new mapboxgl.Marker({
-                        element: el
-                    })
-                    .setLngLat([
-                        poi.geometry.location.lng,
-                        poi.geometry.location.lat
-                    ]);
-
-                    // Store data and add handlers
-                    marker.poiId = poiId;
-                    marker.poiData = poi;
-
-                    el.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        this.selectMarker(poiId);
-                        this._markerClickCallbacks.forEach(callback => callback(poi));
-                    });
-
-                    el.addEventListener('touchstart', (e) => {
-                        e.preventDefault();
-                        this.selectMarker(poiId);
-                        this._markerClickCallbacks.forEach(callback => callback(poi));
-                    }, { passive: false });
-
-                    // Add to tracking arrays
-                    newMarkers.push(marker);
-                }
-            }
-        });
-
-        // Remove old markers with fade
-        existingMarkers.forEach(marker => {
-            const el = marker.getElement();
-            el.style.opacity = '0';
-            setTimeout(() => marker.remove(), 300);
-        });
-
-        // Add new markers to map and fade them in with stagger
-        newMarkers.forEach((marker, index) => {
-            // Add to map first
-            marker.addTo(this._map);
-            
-            // Force a reflow to ensure the transition works
-            marker.getElement().offsetHeight;
-
-            // Fade in with stagger
-            setTimeout(() => {
-                marker.getElement().style.opacity = '1';
-            }, index * 50);
-        });
-
-        // Update marker tracking array
-        this._placeMarkers = this._placeMarkers
-            .filter(marker => !existingMarkers.has(marker.poiId || marker.placeId))
-            .concat(newMarkers);
-
-        // Notify callbacks
-        this._notifyCallbacks(pois, {
-            event: 'poi_update',
-            source: options.source || 'poi_search'
         });
     }
 
@@ -1105,11 +1026,6 @@ class MapService {
             searchInput.value = text;
             searchInput.setSelectionRange(0, searchInput.value.length);
         }
-    }
-
-    updateMarkers(places) {
-        this._clearPlaceMarkers();
-        this._addPlaceMarkers(places);
     }
 
     getMapBounds() {
