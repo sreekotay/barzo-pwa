@@ -6,7 +6,7 @@
       "use": "@vercel/node"
     },
     {
-      "src": "public/src/styles/main.css",
+      "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
         "distDir": "public/dist",
@@ -15,6 +15,10 @@
     }
   ],
   "routes": [
+    {
+      "src": "/dist/(.*)",
+      "dest": "/dist/$1"
+    },
     {
       "src": "/(.*)",
       "dest": "/server.js"
