@@ -58,8 +58,48 @@ const GRID = {
 // Add provider constants
 const PROVIDER = {
   GOOGLE: 'google',
-  MAPBOX: 'mapbox'
+  MAPBOX: 'mapbox',
+  RADAR: 'radar'
 };
+
+// Helper function to map place types to Radar categories
+function getRadarCategory(type) {
+    return TYPE_MAPPING[PROVIDER.RADAR][type] || TYPE_MAPPING[PROVIDER.RADAR].default;
+}
+
+// Helper function to parse Radar hours format
+function parseRadarHours(hours) {
+    if (!hours) return null;
+
+    try {
+        const now = new Date();
+        const dayIndex = now.getDay();
+        const currentTime = now.getHours() * 100 + now.getMinutes();
+
+        const dayHours = hours[dayIndex];
+        if (!dayHours) return null;
+
+        const isOpen = dayHours.some(period => {
+            const start = parseInt(period.start.replace(':', ''));
+            const end = parseInt(period.end.replace(':', ''));
+            return currentTime >= start && currentTime <= end;
+        });
+
+        return {
+            open_now: isOpen,
+            weekday_text: hours.map((dayHours, index) => {
+                const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                const timeRanges = dayHours.map(period => 
+                    `${period.start}-${period.end}`
+                ).join(', ');
+                return `${dayNames[index]}: ${timeRanges || 'Closed'}`;
+            })
+        };
+    } catch (error) {
+        console.error('Error parsing Radar hours:', error);
+        return null;
+    }
+}
 
 const TYPE_MAPPING = {
   [PROVIDER.GOOGLE]: {
@@ -71,37 +111,131 @@ const TYPE_MAPPING = {
     restaurant: 'restaurant',
     bar: 'bar,pub',
     cafe: 'cafe,coffee'
+  },
+  [PROVIDER.RADAR]: {
+    bar: 'bar',
+    night_club: 'nightlife',
+    restaurant: 'restaurant',
+    cafe: 'cafe',
+    default: 'food_beverage'
   }
 };
 
-// Add provider-specific configs
+// Helper function to create/track a Radar user
+async function createRadarUser(apiKey) {
+    const deviceId = crypto.randomUUID(); // Generate a unique device ID
+    
+    try {
+        const response = await fetch('https://api.radar.io/v1/track', {
+            method: 'POST',
+            headers: {
+                'Authorization': apiKey,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                deviceId: deviceId,
+                latitude: 27.7717,  // Default location (St Pete)
+                longitude: -82.6387,
+                accuracy: 65,
+                foreground: true
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Radar user creation failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return { deviceId, userId: data.user?._id };
+    } catch (error) {
+        console.error('Error creating Radar user:', error);
+        throw error;
+    }
+}
+
+// Update the provider configuration
 const API_CONFIG = {
   [PROVIDER.GOOGLE]: {
-    nearbySearch: (params, key) => 
-      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${params.lat},${params.lng}&radius=${params.radius}&type=${params.type}&key=${key}`,
-    placeDetails: (placeId, key) => 
-      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}` +
-      `&fields=place_id,name,geometry,formatted_address,formatted_phone_number,website,opening_hours,current_opening_hours,` +
-      `price_level,types,editorial_summary,serves_breakfast,serves_lunch,serves_dinner,serves_brunch,` +
-      `photos&key=${key}`,
+    nearbySearch: async (params) => {
+      try {
+        const searchParams = new URLSearchParams({
+          location: `${params.lat},${params.lng}`,
+          radius: params.radius,
+          type: params.type,
+          key: params.apiKey
+        });
+
+        const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${searchParams}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Google Places API error: ${response.status}`);
+        }
+        
+        return response.json();
+      } catch (error) {
+        console.error('Google Places API error:', error);
+        throw error;
+      }
+    },
+    placeDetails: async (placeId, apiKey) => {
+      try {
+        const searchParams = new URLSearchParams({
+          place_id: placeId,
+          key: apiKey,
+          fields: [
+            'place_id', 'name', 'geometry', 'formatted_address',
+            'formatted_phone_number', 'website', 'opening_hours',
+            'current_opening_hours', 'price_level', 'types',
+            'editorial_summary', 'serves_breakfast', 'serves_lunch',
+            'serves_dinner', 'serves_brunch', 'photos'
+          ].join(',')
+        });
+
+        const url = `https://maps.googleapis.com/maps/api/place/details/json?${searchParams}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Google Places Details API error: ${response.status}`);
+        }
+        
+        return response.json();
+      } catch (error) {
+        console.error('Google Places Details API error:', error);
+        throw error;
+      }
+    },
     parseNearbyResults: (data) => data.results,
     parsePlaceDetails: (data) => data.result
   },
   [PROVIDER.MAPBOX]: {
-      nearbySearch: (params, apiKey) => {
-        // Use Overpass API for bars/restaurants/nightclubs
+    nearbySearch: async (params) => {
+      try {
+        let url;
         if (params.type.includes('bar') || params.type.includes('restaurant')) {
-            const amenityTypes = params.type.includes('bar') ? 'bar|nightclub' : 'restaurant';
-            return `https://overpass-api.de/api/interpreter?data=[out:json];` +
-                   `(node[amenity~"${amenityTypes}"](around:${params.radius},${params.lat},${params.lng}););out;`;
+          const amenityTypes = params.type.includes('bar') ? 'bar|nightclub' : 'restaurant';
+          url = `https://overpass-api.de/api/interpreter?data=[out:json];` +
+                `(node[amenity~"${amenityTypes}"](around:${params.radius},${params.lat},${params.lng}););out;`;
+        } else {
+          const searchParams = new URLSearchParams({
+            access_token: params.apiKey,
+            radius: params.radius,
+            limit: '40',
+            layers: 'poi_label'
+          });
+          url = `https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/tilequery/${params.lng},${params.lat}.json?${searchParams}`;
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Mapbox API error: ${response.status}`);
         }
         
-        // Fallback to Mapbox for other types
-        return `https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/tilequery/${params.lng},${params.lat}.json?` +
-               `access_token=${apiKey}&` +
-               `radius=${params.radius}&` +
-               `limit=40&` +
-               `layers=poi_label`;
+        return response.json();
+      } catch (error) {
+        console.error('Mapbox API error:', error);
+        throw error;
+      }
     },
     placeDetails: (placeId, apiKey) => 
         `https://overpass-api.de/api/interpreter?data=[out:json];` +
@@ -157,16 +291,8 @@ const API_CONFIG = {
         const element = data.elements[0];
         const tags = element.tags || {};
 
-        // Get coordinates based on element type
-        let lat, lng;
-        if (element.type === 'node') {
-            lat = element.lat;
-            lng = element.lon;
-        } else if (element.center) {
-            // Ways and relations have a center point
-            lat = element.center.lat;
-            lng = element.center.lon;
-        }
+        // Parse opening hours
+        const openingHours = parseOSMHours(tags.opening_hours);
 
         return {
             place_id: element.id.toString(),
@@ -178,13 +304,13 @@ const API_CONFIG = {
                 tags['addr:postcode']
             ].filter(Boolean).join(', ') || tags.address || '',
             geometry: {
-                location: { lat, lng }
+                location: {
+                    lat: element.lat || element.center?.lat,
+                    lng: element.lon || element.center?.lon
+                }
             },
             types: [tags.amenity, tags.leisure, tags.shop].filter(Boolean),
-            current_opening_hours: {
-                open_now: null,
-                weekday_text: tags.opening_hours ? [tags.opening_hours] : []
-            },
+            current_opening_hours: openingHours,
             formatted_phone_number: tags.phone || tags['contact:phone'],
             website: tags.website || tags['contact:website'] || tags.url,
             price_level: tags.price_level ? parseInt(tags.price_level) : null,
@@ -196,6 +322,124 @@ const API_CONFIG = {
             serves_dinner: tags.dinner === 'yes' || tags.cuisine?.includes('dinner'),
             serves_brunch: tags.brunch === 'yes' || tags.cuisine?.includes('brunch')
         };
+    }
+  },
+  [PROVIDER.RADAR]: {
+    nearbySearch: async (params) => {
+      try {
+        const searchParams = new URLSearchParams({
+          near: `${params.lat},${params.lng}`,
+          radius: params.radius.toString(),
+          categories: getRadarCategory(params.type),
+          limit: '50'
+        });
+
+        const url = `https://api.radar.io/v1/search/places?${searchParams}`;
+        console.log('Radar API Request:', {
+          url,
+          headers: { Authorization: params.apiKey },
+          searchParams: Object.fromEntries(searchParams.entries())
+        });
+
+        const response = await fetch(url, {
+          headers: { 'Authorization': params.apiKey }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Radar search failed: ${response.status}`);
+        }
+        
+        return response.json();
+      } catch (error) {
+        console.error('Radar API error:', error);
+        throw error;
+      }
+    },
+    placeDetails: async (placeId, apiKey) => {
+      try {
+        const url = `https://api.radar.io/v1/places/${placeId}`;
+        
+        console.log('Radar Details Request:', {
+          url,
+          headers: { Authorization: apiKey }
+        });
+
+        const response = await fetch(url, {
+          headers: { 'Authorization': apiKey }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Radar place details failed: ${response.status}`);
+        }
+        
+        return response.json();
+      } catch (error) {
+        console.error('Radar API error:', error);
+        throw error;
+      }
+    },
+    parseNearbyResults: (data) => {
+      if (!data.places || !Array.isArray(data.places)) {
+        return [];
+      }
+
+      return data.places.map(place => ({
+        place_id: place._id,
+        name: place.name,
+        geometry: {
+          location: {
+            lat: place.location.coordinates[1],
+            lng: place.location.coordinates[0]
+          }
+        },
+        vicinity: place.formattedAddress || `${place.city}, ${place.state}`,
+        types: place.categories,
+        rating: place.rating,
+        user_ratings_total: place.ratings_count,
+        opening_hours: place.hours ? {
+          open_now: place.hours.status === 'open',
+          weekday_text: place.hours.weekday_text
+        } : undefined,
+        photos: place.logo ? [{
+          photo_reference: place.logo,
+          height: 400,
+          width: 400,
+          html_attributions: []
+        }] : []
+      }));
+    },
+    parsePlaceDetails: (data) => {
+      if (!data.place) {
+        return null;
+      }
+
+      const place = data.place;
+      return {
+        place_id: place._id,
+        name: place.name,
+        formatted_address: place.formattedAddress,
+        geometry: {
+          location: {
+            lat: place.location.coordinates[1],
+            lng: place.location.coordinates[0]
+          }
+        },
+        types: place.categories,
+        rating: place.rating,
+        user_ratings_total: place.ratings_count,
+        opening_hours: place.hours ? {
+          open_now: place.hours.status === 'open',
+          weekday_text: place.hours.weekday_text
+        } : undefined,
+        photos: place.logo ? [{
+          photo_reference: place.logo,
+          height: 400,
+          width: 400,
+          html_attributions: []
+        }] : [],
+        formatted_phone_number: place.phone,
+        website: place.website
+      };
     }
   }
 };
@@ -241,9 +485,9 @@ const CACHE_DURATION = {
         DETAILS: 604800   // 1 week
     },
     DEVELOPMENT: {
-        KV: 604800,          // 1 minute
-        BROWSER: 604800,     // 1 minute
-        DETAILS: 604800      // 1 minute
+        KV: 60,          // 1 minute
+        BROWSER: 60,     // 1 minute
+        DETAILS: 60      // 1 minute
     }
 };
 
@@ -307,7 +551,7 @@ export default {
       
       // Cache control parameters
       const cacheReset = url.searchParams.get("cache-reset");
-      const noCache = url.searchParams.get("no-cache") === 'true' && false; //debug
+      const noCache = url.searchParams.get("no-cache") === 'true'; //debug
 
       // Cache control function
       const shouldUseCache = async (cacheKey) => {
@@ -337,7 +581,6 @@ export default {
       }
 
       // Add provider selection
-      console.log(1)
       const provider = url.searchParams.get("provider") || PROVIDER.GOOGLE//MAPBOX;
       const apiConfig = API_CONFIG[provider];
       
@@ -345,7 +588,7 @@ export default {
         return new Response(JSON.stringify({
           error: "Invalid provider",
           providedValue: provider,
-          validProviders: Object.values(PROVIDER),ç
+          validProviders: Object.values(PROVIDER),
           debug: { provider, apiConfig, availableConfigs: Object.keys(API_CONFIG) }
         }), { 
           status: 400,
@@ -359,6 +602,8 @@ export default {
       // Use appropriate API key
       const apiKey = provider === PROVIDER.GOOGLE ? 
         (userGoogleKey || env.GOOGLE_PLACES_API_KEY) : 
+        provider === PROVIDER.RADAR ?
+        env.RADAR_API_KEY :
         env.MAPBOX_API_KEY;
 
       // Check if this is a place details request
@@ -369,7 +614,6 @@ export default {
         // Check if we should use cache
         const useCache = await shouldUseCache(detailsCacheKey);
         
-        console.log(2)
         // Check cache first if allowed
         if (useCache) {
             let cachedDetails = await env.PLACES_KV.get(detailsCacheKey, { type: "json" });
@@ -457,7 +701,7 @@ export default {
               let cachedData = await env.PLACES_KV.getWithMetadata(cacheKey, { type: "json" });
               if (cachedData && cachedData.value) {
                   // Check if cache entry would have expired based on current policy
-                  const cacheAge = Date.now() - cachedData.metadata.timestamp;
+                  const cacheAge = Date.now() - (cachedData.metadata?.timestamp || 0);
                   const maxAge = cacheDuration.KV * 1000; // Convert to milliseconds
                   
                   if (cacheAge < maxAge) {
@@ -474,62 +718,60 @@ export default {
                   // Cache is too old based on current policy, let it fall through to refresh
               }
           } catch (error) {
-              console.error("Cache fetch error ----------------", error)
-              throw error;
+              // Log the error but continue with fresh data fetch
+              console.error("Cache fetch error:", error);
           }
       }
 
-      // For nearby search
+      // Debug logging
+      console.log('Request params:', { lat, lng, radius, type });
+      console.log('Provider:', provider);
+      console.log('API Key available:', !!apiKey);
+
       const searchParams = {
-        lat: roundedLat,
-        lng: roundedLng,
-        radius: roundedRadius,
-        type: TYPE_MAPPING[provider][type] || type
+        lat,
+        lng,
+        radius,
+        type,
+        apiKey  // Pass the correct API key
       };
 
-      const searchUrl = apiConfig.nearbySearch(searchParams, apiKey);
-      const searchResponse = await fetch(searchUrl);
-      const searchData = await searchResponse.json();
+      // Debug logging (mask the API key)
+      console.log('Search params:', {
+        ...searchParams,
+        apiKey: apiKey ? `${apiKey.substring(0, 8)}...` : 'missing'
+      });
 
-      if (!searchResponse.ok) {
-        console.error ('Search Url', searchUrl);
-        console.error('Search response error:', {
-          status: searchResponse.status,
-          statusText: searchResponse.statusText
-        });
-        return new Response(JSON.stringify({
-          error: `Failed to fetch data from ${provider}`,
-          details: searchData,
-          status: searchResponse.status,
-          statusText: searchResponse.statusText,
-          response: searchData
-        }), { 
-          status: searchResponse.status || 500,
+      try {
+        const data = await API_CONFIG[provider].nearbySearch(searchParams);
+        console.log('Search data:', JSON.stringify(data));
+
+        if (!data) {
+          throw new Error('No data returned from API');
+        }
+
+        const normalizedResults = API_CONFIG[provider].parseNearbyResults(data);
+        
+        // Store in KV with expiration
+        if (normalizedResults && normalizedResults.length > 0) {
+          await env.PLACES_KV.put(cacheKey, JSON.stringify(normalizedResults), { 
+            expirationTtl: cacheDuration.KV,
+            metadata: { timestamp: Date.now() }
+          });
+        }
+
+        return new Response(JSON.stringify(normalizedResults), {
           headers: {
             ...corsHeaders,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Cache-Control": `public, max-age=${cacheDuration.BROWSER}`,
+            "X-Cache-Hit": "false"
           }
         });
+      } catch (error) {
+        console.error('API request failed:', error);
+        throw error;
       }
-
-      const normalizedResults = apiConfig.parseNearbyResults(searchData);
-      
-      // Store in KV with expiration
-      await env.PLACES_KV.put(cacheKey, JSON.stringify(normalizedResults), { 
-        expirationTtl: cacheDuration.KV,
-        metadata: { timestamp: Date.now() }
-      });
-
-      // For non-cache responses, add cache miss header
-      return new Response(JSON.stringify(normalizedResults), {
-        headers: { 
-          ...corsHeaders,
-          "Content-Type": "application/json", 
-          "Cache-Control": `public, max-age=${cacheDuration.BROWSER}`,
-          "X-Cache-Hit": "false",
-          "X-Cache-Type": "places_nearby"
-        },
-      });
     } catch (error) {
       console.error('Error in handleRequest - after data fetch', error)
       return new Response(JSON.stringify({
@@ -566,4 +808,91 @@ function getDetailsCacheKey(placeId, provider) {
 // Add these helper functions at the top with other constants
 function getNearbySearchCacheKey(lat, lng, radius, type, provider) {
     return `nearby:${provider}:${lat},${lng}:${radius}:${type}`;
+}
+
+function parseOSMHours(openingHours) {
+    if (!openingHours) return null;
+
+    try {
+        const now = new Date();
+        const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+        const currentDay = dayNames[now.getDay()];
+        const currentTime = now.getHours() * 100 + now.getMinutes();
+
+        // Split rules by semicolon
+        const rules = openingHours.split(';').map(r => r.trim());
+        
+        for (const rule of rules) {
+            // Match day ranges and time ranges
+            const match = rule.match(/([A-Za-z,\-]+)\s+(.+)/);
+            if (!match) continue;
+
+            const [_, days, times] = match;
+            
+            // Check if current day is in the range
+            if (days.includes(currentDay)) {
+                // Parse time ranges
+                const timeRanges = times.split(',').map(t => t.trim());
+                
+                for (const timeRange of timeRanges) {
+                    const [start, end] = timeRange.split('-')
+                        .map(t => {
+                            const [hours, minutes = '00'] = t.split(':');
+                            return parseInt(hours) * 100 + parseInt(minutes);
+                        });
+
+                    if (currentTime >= start && currentTime <= end) {
+                        return {
+                            open_now: true,
+                            weekday_text: [openingHours]
+                        };
+                    }
+                }
+            }
+        }
+
+        return {
+            open_now: false,
+            weekday_text: [openingHours]
+        };
+
+    } catch (error) {
+        console.error('Error parsing OSM hours:', error);
+        return null;
+    }
+}
+
+async function fetchWithProvider(url, provider) {
+    const config = API_CONFIG[provider];
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(config.headers || {})
+    };
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+    }
+    return await response.json();
+}
+
+export async function onRequest(context) {
+  const RADAR_API_KEY = context.env.RADAR_API_KEY;
+  
+  const API_CONFIG = {
+    [PROVIDER.RADAR]: {
+      url: 'https://api.radar.io/v1/search/places',
+      params: {
+        radius: 1000,
+        limit: 50,
+        categories: 'food-beverage'
+      },
+      headers: {
+        'Authorization': RADAR_API_KEY
+      }
+    },
+    // ... other providers ...
+  };
+
+  // ... rest of the code ...
 }

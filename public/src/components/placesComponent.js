@@ -227,7 +227,7 @@ export default class PlacesComponent {
                 distance,
                 formattedDistance
             };
-        }).sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+        })//.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
     }
 
     _calculateRadius() {
