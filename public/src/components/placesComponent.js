@@ -1,8 +1,8 @@
 import MarkerManager from '../services/markerManager.js';
 import CarouselComponent from './carouselComponent.js';
 
-//const PLACES_API_URL = 'https://nearby-places-worker.sree-35c.workers.dev'; // prod
-const PLACES_API_URL = 'http://localhost:8787'; // debug
+const PLACES_API_URL = 'https://nearby-places-worker.sree-35c.workers.dev'; // prod
+//const PLACES_API_URL = 'http://localhost:8787'; // debug
 
 export default class PlacesComponent {
     constructor(mapService, locationService, containerSelector, config = {}) {

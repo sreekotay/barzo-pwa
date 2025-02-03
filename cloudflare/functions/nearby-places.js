@@ -32,7 +32,7 @@
  * - X-Cache-Type: 'places_nearby' or 'places_details'
  * 
  * Example Usage:
- * curl "http://localhost:8787/nearby-places?lat=27.9506&lng=-82.4572" \
+ * curl "http://localhost:8787/nearby-plcaaces?lat=27.9506&lng=-82.4572" \
  *   -H "X-API-Key: your_api_key"
  * 
  * curl "http://localhost:8787/nearby-places?placeId=ChIJv-_K-JzhwogRteKYG94IedY" \
@@ -88,15 +88,51 @@ const API_CONFIG = {
     parsePlaceDetails: (data) => data.result
   },
   [PROVIDER.MAPBOX]: {
-    nearbySearch: (params, apiKey) => 
-        `https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/tilequery/${params.lng},${params.lat}.json?` +
-        `access_token=${apiKey}&` +
-        `radius=${params.radius}&` +  // Use params.radius directly
-        `limit=40&` +
-        `layers=poi_label`,
+      nearbySearch: (params, apiKey) => {
+        // Use Overpass API for bars/restaurants/nightclubs
+        if (params.type.includes('bar') || params.type.includes('restaurant')) {
+            const amenityTypes = params.type.includes('bar') ? 'bar|nightclub' : 'restaurant';
+            return `https://overpass-api.de/api/interpreter?data=[out:json];` +
+                   `(node[amenity~"${amenityTypes}"](around:${params.radius},${params.lat},${params.lng}););out;`;
+        }
+        
+        // Fallback to Mapbox for other types
+        return `https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/tilequery/${params.lng},${params.lat}.json?` +
+               `access_token=${apiKey}&` +
+               `radius=${params.radius}&` +
+               `limit=40&` +
+               `layers=poi_label`;
+    },
     placeDetails: (placeId, apiKey) => 
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${placeId}.json?access_token=${apiKey}`,
+        `https://overpass-api.de/api/interpreter?data=[out:json];` +
+        `(node(${placeId});way(${placeId});relation(${placeId}););out tags;`,
     parseNearbyResults: (data) => {
+        // Check if this is Overpass data
+        if (data.elements) {
+            return data.elements.map(place => ({
+                place_id: place.id.toString(),
+                name: place.tags.name || 'Unnamed Location',
+                vicinity: place.tags['addr:street'] ? 
+                    `${place.tags['addr:housenumber'] || ''} ${place.tags['addr:street']}` : 
+                    (place.tags.address || place.tags.name || 'No address'),
+                geometry: {
+                    location: {
+                        lat: place.lat,
+                        lng: place.lon
+                    }
+                },
+                types: [place.tags.amenity].filter(Boolean),
+                rating: null,
+                user_ratings_total: null,
+                photos: [],
+                opening_hours: { 
+                    open_now: null,
+                    weekday_text: place.tags.opening_hours ? [place.tags.opening_hours] : []
+                }
+            }));
+        }
+
+        // Original Mapbox parsing for other types
         return data.features.map(place => ({
             place_id: place.id,
             name: place.properties.name,
@@ -114,7 +150,53 @@ const API_CONFIG = {
             opening_hours: { open_now: null }
         }));
     },
-    parsePlaceDetails: (data) => normalizeMapboxPlace(data.features[0])
+    parsePlaceDetails: (data) => {
+        if (!data.elements || !data.elements[0]) {
+            throw new Error('No place details found');
+        }
+        const element = data.elements[0];
+        const tags = element.tags || {};
+
+        // Get coordinates based on element type
+        let lat, lng;
+        if (element.type === 'node') {
+            lat = element.lat;
+            lng = element.lon;
+        } else if (element.center) {
+            // Ways and relations have a center point
+            lat = element.center.lat;
+            lng = element.center.lon;
+        }
+
+        return {
+            place_id: element.id.toString(),
+            name: tags.name || 'Unnamed Location',
+            formatted_address: [
+                tags['addr:housenumber'],
+                tags['addr:street'],
+                tags['addr:city'],
+                tags['addr:postcode']
+            ].filter(Boolean).join(', ') || tags.address || '',
+            geometry: {
+                location: { lat, lng }
+            },
+            types: [tags.amenity, tags.leisure, tags.shop].filter(Boolean),
+            current_opening_hours: {
+                open_now: null,
+                weekday_text: tags.opening_hours ? [tags.opening_hours] : []
+            },
+            formatted_phone_number: tags.phone || tags['contact:phone'],
+            website: tags.website || tags['contact:website'] || tags.url,
+            price_level: tags.price_level ? parseInt(tags.price_level) : null,
+            rating: null,
+            user_ratings_total: null,
+            photos: [],
+            serves_breakfast: tags.breakfast === 'yes' || tags.cuisine?.includes('breakfast'),
+            serves_lunch: tags.lunch === 'yes' || tags.cuisine?.includes('lunch'),
+            serves_dinner: tags.dinner === 'yes' || tags.cuisine?.includes('dinner'),
+            serves_brunch: tags.brunch === 'yes' || tags.cuisine?.includes('brunch')
+        };
+    }
   }
 };
 
@@ -255,6 +337,7 @@ export default {
       }
 
       // Add provider selection
+      console.log(1)
       const provider = url.searchParams.get("provider") || PROVIDER.GOOGLE//MAPBOX;
       const apiConfig = API_CONFIG[provider];
       
@@ -262,7 +345,7 @@ export default {
         return new Response(JSON.stringify({
           error: "Invalid provider",
           providedValue: provider,
-          validProviders: Object.values(PROVIDER),
+          validProviders: Object.values(PROVIDER),ç
           debug: { provider, apiConfig, availableConfigs: Object.keys(API_CONFIG) }
         }), { 
           status: 400,
@@ -286,6 +369,7 @@ export default {
         // Check if we should use cache
         const useCache = await shouldUseCache(detailsCacheKey);
         
+        console.log(2)
         // Check cache first if allowed
         if (useCache) {
             let cachedDetails = await env.PLACES_KV.get(detailsCacheKey, { type: "json" });
@@ -306,7 +390,8 @@ export default {
         const detailsUrl = apiConfig.placeDetails(placeId, apiKey);
         const detailsResponse = await fetch(detailsUrl);
         const detailsData = await detailsResponse.json();
-
+        console.log('Details Data', JSON.stringify(detailsData));
+        
         if (!detailsResponse.ok) {
           console.error ('Details Url', detailsUrl);
           return new Response(JSON.stringify({
@@ -366,7 +451,7 @@ export default {
       const cacheDuration = isDevelopment ? CACHE_DURATION.DEVELOPMENT : CACHE_DURATION.PRODUCTION;
 
       // Then in the cac((he check section
-      const useCache = await shouldUseCache(cacheKey);
+      const useCache =  await shouldUseCache(cacheKey);
       if (useCache) {
           try {
               let cachedData = await env.PLACES_KV.getWithMetadata(cacheKey, { type: "json" });
