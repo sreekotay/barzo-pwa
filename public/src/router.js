@@ -18,16 +18,6 @@ export default class Router {
         this.sheetRoutes = new Set(['place', 'profile']);
         this.routeStack = ['home']; // Stack of routes
         this.currentSheetDepth = 0;
-
-        // Debug history state
-        window.addEventListener('popstate', (e) => {
-            console.log('PopState Event:', {
-                state: e.state,
-                historyLength: window.history.length,
-                currentHash: window.location.hash,
-                referrer: document.referrer
-            });
-        });
     }
 
     async handleRoute(route = '') {

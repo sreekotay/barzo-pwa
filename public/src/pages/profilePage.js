@@ -25,7 +25,6 @@ export default class ProfilePage {
         this.profileComponent = new ProfileComponent();
         
         const dataLoadedHandler = async (evt) => {
-            console.log('Caught profileDataLoaded event');
             await evt.detail.component.updateProfileUI();
             sheet.animateIn();
             document.removeEventListener('profileDataLoaded', dataLoadedHandler);

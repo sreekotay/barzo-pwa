@@ -812,3 +812,31 @@ footer {
 header .profile-pic {
     margin-top: 0;
 }
+
+/* Add these styles for dark mode map controls */
+.mapboxgl-ctrl-group {
+    background-color: #404040 !important;
+}
+
+.mapboxgl-ctrl-group button {
+    background-color: #404040 !important;
+}
+
+.mapboxgl-ctrl-group button .mapboxgl-ctrl-icon {
+    filter: invert(1) !important;
+}
+
+.mapboxgl-ctrl-group button:not(:disabled):hover {
+    background-color: #505050 !important;
+}
+
+/* Style the zoom controls border */
+.mapboxgl-ctrl-group:not(:empty) {
+    border: 1px solid #606060 !important;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
+}
+
+/* Style the individual control borders */
+.mapboxgl-ctrl-group > button + button {
+    border-top: 1px solid #606060 !important;
+}

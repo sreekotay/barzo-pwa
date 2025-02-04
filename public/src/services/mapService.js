@@ -172,7 +172,7 @@ class MapService {
         mapboxgl.accessToken = this._accessToken;
         this._map = new mapboxgl.Map({
             container: this._mapContainer,
-            style: 'mapbox://styles/mapbox/dark-v10',
+            style: 'mapbox://styles/mapbox/dark-v11',
             zoom: shouldAnimate ? 1 : this._initialZoom,
             center: shouldAnimate ? [138.2529, 36.2048] : [initialCenter.lng, initialCenter.lat],
             attributionControl: false,
@@ -257,7 +257,9 @@ class MapService {
         };
 
         // Add controls to bottom-left
-        this._map.addControl(new mapboxgl.NavigationControl(), 'bottom-left');
+        this._map.addControl(new mapboxgl.NavigationControl({
+            showCompass: false  // This will hide the compass/orientation control
+        }), 'bottom-left');
 
         // Initialize user marker (green dot)
         const userMarkerElement = document.createElement('div');
@@ -978,7 +980,7 @@ class MapService {
                 
                 // Sort places by distance if available
                 if (userLocation) {
-                    //places.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+                    //places    ((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
                 }
                 
                 console.log('Processed places with distances:', places);

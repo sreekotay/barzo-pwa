@@ -19,11 +19,22 @@ async function getClientKeys() {
     return data;
 }
 
-function jitterCoordinate(coord, meters) {
-    // Convert meters to approximate degrees (rough approximation)
+function jitterLocation(lat, lng, maxMeters) {
+    // Random distance up to maxMeters, using square root for more natural distribution
+    const distance = Math.sqrt(Math.random()) * maxMeters;
+    
+    // Random angle in radians
+    const angle = Math.random() * 2 * Math.PI;
+    
+    // Convert distance to degrees (approximate)
     // 111,111 meters = 1 degree at equator
-    const jitterDegrees = meters / 111111;
-    return coord + (Math.random() - 0.5) * jitterDegrees * 2; // multiply by 2 to get full range
+    const latOffset = (distance * Math.cos(angle)) / 111111;
+    const lngOffset = (distance * Math.sin(angle)) / (111111 * Math.cos(lat * Math.PI / 180));
+    
+    return {
+        lat: lat + latOffset,
+        lng: lng + lngOffset
+    };
 }
 
 async function createMessageMarkers() {
@@ -62,22 +73,25 @@ async function createMessageMarkers() {
             return;
         }
 
-        // Create GeoJSON features with jittered coordinates
-        const features = messages.map(msg => ({
-            type: 'Feature',
-            geometry: {
-                type: 'Point',
-                coordinates: [
-                    jitterCoordinate(msg.longitude, 50),
-                    jitterCoordinate(msg.latitude, 50)
-                ]
-            },
-            properties: {
-                weight: 1
-            }
-        }));
+        // Create GeoJSON features with jittered coordinates and varied weights
+        const features = messages.map(msg => {
+            const jittered = jitterLocation(msg.latitude, msg.longitude, 50);
+            return {
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: [jittered.lng, jittered.lat]
+                },
+                properties: {
+                    weight: Math.random() * 0.5 + 0.5
+                }
+            };
+        });
 
-        // Add heatmap layer
+        // Find the first symbol layer in the map style
+        const firstSymbolId = mapService._map.getStyle().layers.find(layer => layer.type === 'symbol').id;
+
+        // Add heatmap layer before the first symbol layer
         messageMarkersLayer = mapService._map.addLayer({
             id: 'messages-heat',
             type: 'heatmap',
@@ -89,13 +103,16 @@ async function createMessageMarkers() {
                 }
             },
             paint: {
-                // Increase weight as zoom level increases
+                // Nonlinear weight contribution
                 'heatmap-weight': [
                     'interpolate',
-                    ['linear'],
+                    ['exponential', 2],  // Using exponential interpolation with base 2
                     ['get', 'weight'],
                     0, 0,
-                    1, 1
+                    0.2, 0.1,    // Low weights have minimal impact
+                    0.5, 0.4,    // Medium weights have moderate impact
+                    0.8, 0.8,    // Higher weights start to dominate
+                    1, 2         // Maximum weight has strong impact
                 ],
                 // Increase intensity as zoom level increases
                 'heatmap-intensity': [
@@ -103,9 +120,9 @@ async function createMessageMarkers() {
                     ['linear'],
                     ['zoom'],
                     0, 1,
-                    9, 3
+                    9, 5
                 ],
-                // Cool green gradient for the heatmap
+                // Cool green gradient for the heatmap - brighter colors
                 'heatmap-color': [
                     'interpolate',
                     ['linear'],
@@ -113,8 +130,8 @@ async function createMessageMarkers() {
                     0, 'rgba(255,255,255,0)',
                     0.2, 'rgb(240,253,244)',  // Lightest green
                     0.4, 'rgb(187,247,208)',  // Light green
-                    0.6, 'rgb(134,239,172)',  // Medium green
-                    0.8, 'rgb(34,197,94)',    // Bright green
+                    0.6, 'rgb(74,222,128)',   // Brighter medium green
+                    0.8, 'rgb(22,163,74)',    // Brighter green
                     1, 'rgb(21,128,61)'       // Dark green
                 ],
                 // Adjust the heatmap radius by zoom level
@@ -122,8 +139,8 @@ async function createMessageMarkers() {
                     'interpolate',
                     ['linear'],
                     ['zoom'],
-                    0, 2,
-                    9, 20
+                    0, 0.5,
+                    9, 8
                 ],
                 // Transition from heatmap to circle layer by zoom level
                 'heatmap-opacity': [
@@ -131,10 +148,10 @@ async function createMessageMarkers() {
                     ['linear'],
                     ['zoom'],
                     7, 1,
-                    9, 0.5
+                    9, 0.7
                 ]
             }
-        });
+        }, firstSymbolId);  // Add this parameter to insert before symbols
 
     } catch (error) {
         console.error('Error creating message heatmap:', error);
@@ -160,16 +177,20 @@ async function startupThisApp() {
         searchInputLevel: 'neighborhood'
     });
 
-    if (!localStorage.getItem('authToken')) {
-        window.location.href = '/legacy.html?redirect=' + encodeURIComponent(window.location.href);
-    }
-
-    mapService._supabase = supabase.createClient(clientKeys.supabaseUrl, clientKeys.supabaseAnonKey);
+    const authToken = localStorage.getItem('authToken');
     const supabaseSession = localStorage.getItem('supabaseSessionJWT');
-    if (supabaseSession) {
+
+    if (authToken && supabaseSession) {
+        mapService._supabase = supabase.createClient(clientKeys.supabaseUrl, clientKeys.supabaseAnonKey);
         const session = JSON.parse(supabaseSession);
         await mapService._supabase.auth.setSession(session.access_token);
-        console.log ("supabasUser", await mapService._supabase.auth.getUser());
+        const {data, error} = await mapService._supabase.auth.getUser();
+        if (error) mapService._supabase = null; // force a reload of the page below
+        console.log ("supabasUser", data);
+    }
+
+    if (!mapService._supabase) {
+        window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.href);
     }
 
     // Register callbacks before map initialization

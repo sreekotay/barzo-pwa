@@ -631,25 +631,7 @@ export default {
         }
 
         // Use provider-specific details URL and parsing
-        const detailsUrl = apiConfig.placeDetails(placeId, apiKey);
-        const detailsResponse = await fetch(detailsUrl);
-        const detailsData = await detailsResponse.json();
-        console.log('Details Data', JSON.stringify(detailsData));
-        
-        if (!detailsResponse.ok) {
-          console.error ('Details Url', detailsUrl);
-          return new Response(JSON.stringify({
-            error: `Failed to fetch place details from ${provider}`,
-            details: detailsData
-          }), { 
-            status: 500,
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json"
-            }
-          });
-        }
-
+        const detailsData = await apiConfig.placeDetails(placeId, apiKey);
         const normalizedDetails = apiConfig.parsePlaceDetails(detailsData);
         
         // Cache normalized data
