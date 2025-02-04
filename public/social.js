@@ -142,8 +142,8 @@ async function createMessageMarkers() {
                     'interpolate',
                     ['linear'],
                     ['zoom'],
-                    0, 0.5,
-                    9, 8
+                    0, 2,
+                    9, 16
                 ],
                 // Transition from heatmap to circle layer by zoom level
                 'heatmap-opacity': [
