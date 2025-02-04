@@ -100,6 +100,25 @@
             if (!globalAuthToken?.token?.accessToken) {
                 throw new Error('No access token available');
             }
+                /* -- save this WIP for later
+                let apiUrl = 'https://auth-function.sree-35c.workers.dev'
+                const response = await fetch(`${apiUrl}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: {
+                        externalToken: {
+                            id: userInfo.id,
+                            bearer: globalAuthToken.token.accessToken,
+                            env: 'prod' // or 'dev'
+                        }
+                    }
+                });
+                const data = await response.json();
+                /**/
+
+                ///*
 
             const url = new URL(path, globalBarzoUrl);
             const body = method === 'POST' ? JSON.stringify(params) : null;
