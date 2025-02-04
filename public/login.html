@@ -39,38 +39,29 @@
                             'http://localhost:49662' : 
                             'https://nearby-places-worker.sree-35c.workers.dev';
 
+        // Add the timeout wrapper function
+        function withTimeout(promise, timeout) {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error(`Timeout after ${timeout}ms`)), timeout)
+                )
+            ]);
+        }
 
-        // Add new function to provision user
+        // Modify the provisionSupabaseUser function
         async function provisionSupabaseUser(userInfo) {
             try {
                 if (!userInfo.id) {
                     throw new Error('No user ID available');
                 }
-                /*
-                let apiUrl = 'https://auth-function.sree-35c.workers.dev'
-                const response = await fetch(`${apiUrl}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: {
-                        externalToken: {
-                            id: userInfo.id,
-                            bearer: globalAuthToken.token.accessToken,
-                            env: 'prod' // or 'dev'
-                        }
-                    }
-                });
-                const data = await response.json();
-                /**/
 
-                ///*
                 const { data, error } = await supabase.functions.invoke('external-auth', {
                     body: {
                         externalToken: {
                             id: userInfo.id,
                             bearer: globalAuthToken.token.accessToken,
-                            env: 'prod' // or 'dev'
+                            env: 'prod'
                         }
                     }
                 });
@@ -78,15 +69,22 @@
                     console.error('Error:', error);
                     throw error;
                 }
-                /**/
 
                 console.log('Success:', data);
 
-                // Store Supabase session
+                // Store Supabase session with timeout
                 if (data) {
-                    await supabase.auth.setSession(data.access_token);
-                    console.log ("supabasUser", await supabase.auth.getUser());
-                    localStorage.setItem('supabaseSessionJWT', JSON.stringify(data));
+                    try {
+                        await withTimeout(
+                            supabase.auth.setSession(data.access_token),
+                            3000 // 3 second timeout
+                        );
+                        console.log("supabasUser", await supabase.auth.getUser());
+                        localStorage.setItem('supabaseSessionJWT', JSON.stringify(data));
+                    } catch (timeoutError) {
+                        console.error('Session setup timed out:', timeoutError);
+                        throw new Error('Failed to set session: timeout');
+                    }
                 }
 
                 if (error) throw error;
