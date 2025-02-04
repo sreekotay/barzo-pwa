@@ -184,12 +184,17 @@ async function startupThisApp() {
     const supabaseSession = localStorage.getItem('supabaseSessionJWT');
 
     if (authToken && supabaseSession) {
-        mapService._supabase = supabase.createClient(clientKeys.supabaseUrl, clientKeys.supabaseAnonKey);
-        const session = JSON.parse(supabaseSession);
-        await mapService._supabase.auth.setSession(session.access_token);
-        const {data, error} = await mapService._supabase.auth.getUser();
-        if (error) mapService._supabase = null; // force a reload of the page below
-        console.log ("supabasUser", data);
+        try {
+            mapService._supabase = supabase.createClient(clientKeys.supabaseUrl, clientKeys.supabaseAnonKey);
+            const session = JSON.parse(supabaseSession);
+            await mapService._supabase.auth.setSession(session.access_token);
+            const {data, error} = await mapService._supabase.auth.getUser();
+            if (error) mapService._supabase = null; // force a reload of the page below
+            console.log ("supabasUser", data);
+        } catch (error) {
+            console.error('Error setting Supabase session:', error);
+            console.error('[SHOULD REDIRECT]', error);
+        }
     }
 
     if (!mapService._supabase) {
