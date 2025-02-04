@@ -19,6 +19,7 @@ export default class PlacesComponent {
                 closed: '#9CA3AF',
                 pulse: '#E31C5F'
             },
+            onExpand: null,
             ...config
         };
 
@@ -37,6 +38,8 @@ export default class PlacesComponent {
             </div>
         `;
 
+        this._dotElement = null;
+        this._markersVisible = false;
         this._setupComponent();
     }
 
@@ -48,8 +51,11 @@ export default class PlacesComponent {
             return;
         }
 
+        // Get component name from container ID for logging
+        const componentName = this._containerSelector.replace('#', '').replace('-container', '');
+
         // Initialize properties
-        this._markerManager = new MarkerManager(this._mapService);
+        this._markerManager = new MarkerManager(this._mapService, componentName);
         this._currentPlaces = [];
         this._currentIntersectionObserver = null;
         this._isUpdating = false;
@@ -106,6 +112,96 @@ export default class PlacesComponent {
                 }
             });
         }
+
+        // Add header click handler setup
+        this._setupHeaderClickHandler();
+    }
+
+    _setupHeaderClickHandler() {
+        const container = document.querySelector(this._containerSelector);
+        if (!container) return;
+
+        const parent = container.parentElement;
+        if (!parent) return;
+
+        const header = Array.from(parent.children).find(child => {
+            return child.classList.contains('flex') && 
+                   child.nextElementSibling === container;
+        });
+        
+        if (header) {
+            // Find the dot element
+            this._dotElement = header.querySelector('[data-dot]');
+            
+            // Make the entire header clickable
+            header.style.cursor = 'pointer';
+            header.addEventListener('click', (e) => {
+                // If clicking the dot
+                if (e.target === this._dotElement) {
+                    e.stopPropagation();
+                    if (this._dotElement.style.opacity === '0') {
+                        // If dot is invisible, fetch data without expanding
+                        const location = this._locationService.getUserLocationCached();
+                        if (location) {
+                            this._fetchNearbyPlaces(location, false, true); // Pass true as third param for dotClick
+                        }
+                    } else {
+                        // If dot is visible, just toggle markers
+                        this._toggleMarkers();
+                    }
+                    return;
+                }
+                
+                console.log('Header clicked for:', this._containerSelector);
+                this._handleHeaderClick();
+            });
+        }
+    }
+
+    _toggleMarkers() {
+        if (this._markersVisible) {
+            this._markerManager.hideMarkers();
+            this._dotElement.style.opacity = '0.5';
+            this._markersVisible = false;
+        } else {
+            this._markerManager.showMarkers();
+            this._dotElement.style.opacity = '1';
+            this._markersVisible = true;
+        }
+    }
+
+    _handleHeaderClick() {
+        console.log(`[${this._containerSelector}] Handling header click, carousel expanded:`, this._carousel._isExpanded);
+        if (!this._carousel._isExpanded) {
+            // If collapsed, fetch data first without expanding
+            const location = this._locationService.getUserLocationCached();
+            if (location) {
+                console.log(`[${this._containerSelector}] Fetching places before expansion`);
+                this._fetchNearbyPlaces(location, true);
+                // Notify parent about expansion
+                if (this._config.onExpand) {
+                    this._config.onExpand();
+                }
+                // Fit to this component's markers and enable pulsing
+                const bounds = this._markerManager.getMarkerBounds();
+                if (bounds) {
+                    this._mapService.fitToBounds(bounds);
+                }
+                this._markerManager.setPulsing(true);
+            }
+        } else {
+            // If expanded, collapse and disable pulsing
+            console.log(`[${this._containerSelector}] Collapsing carousel and disabling pulsing`);
+            this._carousel.collapse();
+            this._markerManager.setPulsing(false);
+            // Force clear any lingering pulse states
+            this._markerManager.clear();
+            // Immediately recreate markers without pulse
+            const location = this._locationService.getUserLocationCached();
+            if (location && this._currentPlaces?.length) {
+                this._markerManager.updateMarkers(this._currentPlaces, this._config.markerColors);
+            }
+        }
     }
 
     // Call this when switching tabs/routes
@@ -133,25 +229,28 @@ export default class PlacesComponent {
                 this._fetchNearbyPlaces(location);
             }
         }
+
+        // Reset dot state and hide markers
+        if (this._dotElement) {
+            this._dotElement.style.opacity = '0';
+            this._markerManager.hideMarkers();
+            this._markerManager.setPulsing(false);
+        }
+        this._markersVisible = false;
     }
 
     async _handleLocationChange(location) {
-        // Add distance check before fetching
-        const lastLocation = this._lastFetchLocation;
-        const shouldFetch = !lastLocation || this._calculateDistance(
-            lastLocation.lat,
-            lastLocation.lng,
-            location.lat,
-            location.lng
-        ) > 50; // 50 meters threshold
-
-        if (location && !this._mapService._pendingSearch && shouldFetch) {
-            this._lastFetchLocation = location; // Store location of last fetch
-            await this._fetchNearbyPlaces(location);
+        if (this._carousel._isExpanded) {
+            this._fetchNearbyPlaces(location);
         }
     }
 
-    async _fetchNearbyPlaces(location) {
+    async _fetchNearbyPlaces(location, fromHeaderClick = false, fromDotClick = false) {
+        // Don't fetch if collapsed (unless it's from a header click or dot click)
+        if (!this._carousel._isExpanded && !fromHeaderClick && !fromDotClick) {
+            return;
+        }
+
         try {
             const radius = this._calculateRadius() * 2 / 3;
             const roundedLocation = {
@@ -195,8 +294,30 @@ export default class PlacesComponent {
             if (places) {
                 const userLocation = this._locationService.getUserLocationCached();
                 const processedPlaces = this._processPlacesData(places, userLocation);
+                
+                // Update markers and show dot
                 this._markerManager.updateMarkers(processedPlaces, this._config.markerColors);
-                this._updatePlacesContent(processedPlaces);
+                if (this._dotElement) {
+                    this._dotElement.style.opacity = '1';
+                    this._markerManager.showMarkers();
+                    this._markersVisible = true;
+                }
+                
+                // Only expand if this was from a header click (not from dot click)
+                if (fromHeaderClick) {
+                    this._carousel.expand();
+                    // Fit to this component's markers and enable pulsing
+                    const bounds = this._markerManager.getMarkerBounds();
+                    if (bounds) {
+                        this._mapService.fitToBounds(bounds);
+                    }
+                    this._markerManager.setPulsing(true);
+                }
+                
+                // Only update content if we're expanded or this was a header click
+                if (this._carousel._isExpanded || fromHeaderClick) {
+                    this._updatePlacesContent(processedPlaces, fromHeaderClick);
+                }
             }
         } catch (error) {
             console.error('Error fetching nearby places:', error);
@@ -302,21 +423,21 @@ export default class PlacesComponent {
         }
     }
 
-    _updatePlacesContent(places) {
+    _updatePlacesContent(places, fromHeaderClick = false) {
         const container = this._getContainer();
         if (!container) return;
 
         if (!places?.length) {
-            // Just update the container directly if no places
             container.innerHTML = `
                 <div class="no-places-message">
                     No places found nearby
                 </div>
             `;
+            this._carousel.collapse();
             return;
         }
 
-        // Remove only the "no places" message if it exists
+        // Remove the "no places" message if it exists
         const noPlacesMessage = container.querySelector('.no-places-message');
         if (noPlacesMessage) {
             noPlacesMessage.remove();
@@ -349,7 +470,9 @@ export default class PlacesComponent {
         // Update observers and event handlers
         this._setupCardObserversAndHandlers(placesScroll);
 
-        if (places?.length > 0) {
+        // Only expand if we have places and this wasn't from a header click
+        // (header click expansion is handled in _fetchNearbyPlaces)
+        if (places.length > 0 && !fromHeaderClick) {
             this._carousel.expand();
         }
 
@@ -483,54 +606,46 @@ export default class PlacesComponent {
     }
 
     _setupCardObserversAndHandlers(placesScroll) {
-        const container = this._getContainer();
-        if (!container) return;
+        // Disconnect any existing observer
+        if (this._currentIntersectionObserver) {
+            this._currentIntersectionObserver.disconnect();
+        }
 
-        // Create new intersection observer
-        const observer = this._carousel.setupIntersectionObserver((mostVisibleCard) => {
-            if (this._isUpdating) return;
-            
-            const placeId = mostVisibleCard.dataset.placeId;
-            this._carousel.selectCard(placeId);
-            this._markerManager.selectMarker(placeId);
-        });
-
-        // Add click and hover handlers to cards
-        placesScroll.querySelectorAll('.place-card').forEach(card => {
-            // Add hover handlers for desktop
-            if (!this._carousel.isMobile()) {
-                card.addEventListener('mouseenter', () => {
-                    if (this._isUpdating) return;
-                    
-                    const placeId = card.dataset.placeId;
-                    this._carousel.selectCard(placeId);
-                    this._markerManager.selectMarker(placeId);
-                });
-
-                // Add mouseleave to clear selection
-                card.addEventListener('mouseleave', () => {
-                    if (this._isUpdating) return;
-                    
-                    this._carousel.clearSelection();
-                    this._markerManager.selectMarker(null);
-                });
-            }
-            
-            // Add click handler for both mobile and desktop
-            card.addEventListener('click', () => {
-                if (this._isUpdating) return;
-                
-                const placeId = card.dataset.placeId;
-                console.log('🎯 Card clicked:', placeId);
-                this._markerManager.selectMarker(placeId);
-                
-                this._scrollCardIntoView(placeId);
-                
-                const place = this._currentPlaces.find(p => p.place_id === placeId);
-                if (place) {
-                    this.handlePlaceClick(place);
+        // Create new observer
+        this._currentIntersectionObserver = new IntersectionObserver(
+            (entries) => {
+                // Only process if carousel is expanded
+                if (!this._carousel._isExpanded) {
+                    return;
                 }
-            });
+
+                entries.forEach(entry => {
+                    const card = entry.target;
+                    const placeId = card.dataset.placeId;
+                    
+                    if (entry.isIntersecting) {
+                        // Only highlight if carousel is expanded
+                        if (this._carousel._isExpanded) {
+                            this._markerManager.selectMarker(placeId);
+                        }
+                    } else {
+                        // When card scrolls out of view, remove highlight
+                        const el = this._markerManager._markers.get(placeId)?.getElement();
+                        if (el) {
+                            el.classList.remove('selected');
+                        }
+                    }
+                });
+            },
+            {
+                root: placesScroll,
+                threshold: 0.5
+            }
+        );
+
+        // Observe all cards
+        placesScroll.querySelectorAll('.place-card').forEach(card => {
+            this._currentIntersectionObserver.observe(card);
         });
     }
 

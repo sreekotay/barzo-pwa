@@ -1,22 +1,32 @@
 export default class CarouselComponent {
-    constructor(container, config = {}) {
+    constructor(container) {
         this._container = container;
-        this._config = {
-            initialMaxHeight: 0,
-            expandedMaxHeight: 800,
-            transitionDuration: '1.5s',
-            scrollClassName: 'places-scroll',
-            cardClassName: 'place-card',
-            ...config
-        };
-        
+        this._scrollContainer = null;
+        this._isExpanded = false;
         this._isUpdating = false;
         this._lastScrollTime = 0;
         this._isProgrammaticScroll = false;
         this._isTransitioning = false;
         this._currentIntersectionObserver = null;
-
-        this.setupContainer();
+        
+        // Config for class names and measurements
+        this._config = {
+            scrollClassName: 'places-scroll',
+            cardClassName: 'place-card',
+            maxHeight: '400px'  // Define max height here
+        };
+        
+        // Set initial styles on container
+        this._container.style.overflow = 'hidden';
+        this._container.style.maxHeight = '0';
+        // Don't add transition initially
+        
+        // Create scroll container immediately
+        this._scrollContainer = document.createElement('div');
+        this._scrollContainer.className = 'places-scroll overflow-x-auto whitespace-nowrap pb-4';
+        this._scrollContainer.style.maxHeight = '0';
+        this._scrollContainer.style.opacity = '0';
+        this._container.appendChild(this._scrollContainer);
 
         // Add debounced resize listener
         let resizeTimeout;
@@ -32,62 +42,43 @@ export default class CarouselComponent {
         });
     }
 
-    setupContainer() {
-        this._container.style.overflow = 'hidden';
-        this._container.style.maxHeight = `${this._config.initialMaxHeight}px`;
-        this._container.style.transition = `max-height ${this._config.transitionDuration} ease-out`;
+    expand() {
+        console.log('Expanding carousel');
+        // Add transition before expanding
+        this._container.style.transition = 'max-height 0.3s ease-in-out';
+        this._scrollContainer.style.transition = 'all 0.3s ease-in-out';
+        
+        // Set timeout to ensure transition is applied
+        setTimeout(() => {
+            this._container.style.maxHeight = this._config.maxHeight;
+            this._scrollContainer.style.maxHeight = this._config.maxHeight;
+            this._scrollContainer.style.opacity = '1';
+        }, 0);
+        
+        this._isExpanded = true;
     }
 
-    expand() {
-        this._container.style.maxHeight = `${this._config.expandedMaxHeight}px`;
+    collapse() {
+        console.log('Collapsing carousel');
+        // Keep transition for collapse
+        this._container.style.transition = 'max-height 0.3s ease-in-out';
+        this._scrollContainer.style.transition = 'all 0.3s ease-in-out';
+        
+        this._container.style.maxHeight = '0';
+        this._scrollContainer.style.maxHeight = '0';
+        this._scrollContainer.style.opacity = '0';
+        
+        // Remove transition after collapse
+        setTimeout(() => {
+            this._container.style.transition = 'none';
+            this._scrollContainer.style.transition = 'none';
+        }, 300);
+        
+        this._isExpanded = false;
     }
 
     getOrCreateScrollContainer() {
-        let scrollContainer = this._container.querySelector(`.${this._config.scrollClassName}`);
-        if (!scrollContainer) {
-            //console.log('📍 Creating new scroll container');
-            scrollContainer = document.createElement('div');
-            scrollContainer.className = `${this._config.scrollClassName} pb-2`;
-            scrollContainer.innerHTML = '<div class="w-1" style="flex-shrink: 0;"></div>';
-            this._container.appendChild(scrollContainer);
-        }
-        return scrollContainer;
-    }
-
-    scrollCardIntoView(cardId) {
-        const card = this._container.querySelector(`.${this._config.cardClassName}[data-place-id="${cardId}"]`);
-        const scrollContainer = this._container.querySelector(`.${this._config.scrollClassName}`);
-        if (!card || !scrollContainer) return;
-
-        console.log('🔄 Starting programmatic scroll');
-        
-        this._isProgrammaticScroll = true;
-        this._isTransitioning = true;
-        this._lastScrollTime = Date.now();
-        
-        scrollContainer.scrollTo({
-            behavior: 'smooth',
-            left: card.getBoundingClientRect().left - 16 + scrollContainer.scrollLeft,
-        });
-        
-        this._checkScrollEnd(scrollContainer);
-    }
-
-    _checkScrollEnd(scrollContainer) {
-        const currentScroll = scrollContainer.scrollLeft;
-        
-        setTimeout(() => {
-            if (currentScroll === scrollContainer.scrollLeft) {
-                console.log('🔄 Ending programmatic scroll');
-                this._isProgrammaticScroll = false;
-                
-                setTimeout(() => {
-                    this._isTransitioning = false;
-                }, 500);
-            } else {
-                this._checkScrollEnd(scrollContainer);
-            }
-        }, 50);
+        return this._scrollContainer;
     }
 
     setupIntersectionObserver(onCardVisible, options = {}) {
@@ -103,8 +94,6 @@ export default class CarouselComponent {
         const isMobile = this.isMobile();
         
         if (isMobile) {
-            const scrollContainer = this.getOrCreateScrollContainer();
-            
             const observer = new IntersectionObserver(
                 (entries) => {
                     if (this._isProgrammaticScroll || this._isTransitioning) return;
@@ -126,7 +115,7 @@ export default class CarouselComponent {
                     }
                 },
                 {
-                    root: scrollContainer,
+                    root: this._scrollContainer,
                     threshold: [0, 0.25, 0.5, 0.75, 1],
                     rootMargin: '-10% 0px -10% 0px',
                     ...options
@@ -134,7 +123,7 @@ export default class CarouselComponent {
             );
 
             // Observe all cards
-            scrollContainer.querySelectorAll(`.${this._config.cardClassName}`).forEach(card => {
+            this._scrollContainer.querySelectorAll(`.${this._config.cardClassName}`).forEach(card => {
                 observer.observe(card);
             });
 
@@ -143,6 +132,41 @@ export default class CarouselComponent {
         }
         
         return null;
+    }
+
+    scrollCardIntoView(cardId) {
+        const card = this._scrollContainer.querySelector(`.${this._config.cardClassName}[data-place-id="${cardId}"]`);
+        if (!card) return;
+
+        console.log('🔄 Starting programmatic scroll');
+        
+        this._isProgrammaticScroll = true;
+        this._isTransitioning = true;
+        this._lastScrollTime = Date.now();
+        
+        this._scrollContainer.scrollTo({
+            behavior: 'smooth',
+            left: card.getBoundingClientRect().left - 16 + this._scrollContainer.scrollLeft,
+        });
+        
+        this._checkScrollEnd(this._scrollContainer);
+    }
+
+    _checkScrollEnd(scrollContainer) {
+        const currentScroll = scrollContainer.scrollLeft;
+        
+        setTimeout(() => {
+            if (currentScroll === scrollContainer.scrollLeft) {
+                console.log('🔄 Ending programmatic scroll');
+                this._isProgrammaticScroll = false;
+                
+                setTimeout(() => {
+                    this._isTransitioning = false;
+                }, 500);
+            } else {
+                this._checkScrollEnd(scrollContainer);
+            }
+        }, 50);
     }
 
     showEmptyMessage(message) {
@@ -174,6 +198,5 @@ export default class CarouselComponent {
         if (this._currentIntersectionObserver) {
             this._currentIntersectionObserver.disconnect();
         }
-        // Remove any event listeners or other cleanup
     }
 } 

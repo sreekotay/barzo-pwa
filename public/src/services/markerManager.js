@@ -1,9 +1,11 @@
 export default class MarkerManager {
-    constructor(mapService) {
+    constructor(mapService, name = 'unnamed') {
         this._mapService = mapService;
         this._markers = new Map(); // placeId -> marker
         this._selectedMarkerId = null;
         this._markerClickCallbacks = [];
+        this._isPulsing = false;  // Initialize as false
+        this._name = name;  // Store name for logging
         this._defaultColors = {
             open: '#00A572',  // Always use green for open places
             closed: '#9CA3AF',
@@ -59,6 +61,10 @@ export default class MarkerManager {
     _createMarker(place) {
         const el = document.createElement('div');
         el.className = 'place-marker';
+        // Don't add pulse class by default - only if pulsing is enabled
+        if (this._isPulsing) {
+            el.classList.add('pulse');
+        }
         
         // Add CSS variable for pulse color
         el.style.setProperty('--pulse-color', this._currentColors.pulse);
@@ -135,8 +141,60 @@ export default class MarkerManager {
 
     // Clear all markers
     clear() {
-        this._markers.forEach(marker => marker.remove());
+        console.log(`[${this._name}] Clearing markers and pulsing state`);
+        this._markers.forEach(marker => {
+            const el = marker.getElement();
+            if (el) {
+                el.classList.remove('pulse');
+                el.classList.remove('selected');
+            }
+            marker.remove();
+        });
         this._markers.clear();
         this._selectedMarkerId = null;
+        this._isPulsing = false;
+    }
+
+    hideMarkers() {
+        this._markers.forEach(marker => {
+            marker.remove();
+        });
+    }
+
+    showMarkers() {
+        this._markers.forEach(marker => {
+            marker.addTo(this._mapService.getMap());
+        });
+    }
+
+    // Add new method to get bounds of current markers
+    getMarkerBounds() {
+        if (this._markers.size === 0) return null;
+
+        const bounds = new mapboxgl.LngLatBounds();
+        
+        this._markers.forEach(marker => {
+            const lngLat = marker.getLngLat();
+            bounds.extend([lngLat.lng, lngLat.lat]);
+        });
+
+        return bounds;
+    }
+
+    setPulsing(enabled) {
+        console.log(`[${this._name}] Setting pulsing:`, enabled);
+        this._isPulsing = enabled;
+        this._markers.forEach(marker => {
+            const el = marker.getElement();
+            if (el) {
+                if (enabled) {
+                    el.classList.add('pulse');
+                } else {
+                    // Force remove any lingering pulse class
+                    el.classList.remove('pulse');
+                    el.classList.remove('selected');
+                }
+            }
+        });
     }
 }

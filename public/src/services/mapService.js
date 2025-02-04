@@ -262,23 +262,10 @@ class MapService {
         }), 'bottom-left');
 
         // Initialize user marker (green dot)
-        const userMarkerElement = document.createElement('div');
-        userMarkerElement.className = 'user-location-marker';
-        userMarkerElement.style.width = '12px';
-        userMarkerElement.style.height = '12px';
-        userMarkerElement.style.borderRadius = '50%';
-        userMarkerElement.style.backgroundColor = '#4CAF50';
-        userMarkerElement.style.border = '2px solid white';
-        userMarkerElement.style.boxShadow = '0 0 2px rgba(0, 0, 0, 0.3)';
-
-        this._userMarker = new mapboxgl.Marker({
-            element: userMarkerElement
-        });
+        this._createUserMarker();
 
         // Initialize map marker (red pin)
-        this._mapMarker = new mapboxgl.Marker({
-            color: '#00DD00'
-        });
+        this._createMapMarker();
 
         // Subscribe to user location changes to handle initial location
         this._locationUnsubscribe = this._locationService.onUserLocationChange((location) => {
@@ -582,10 +569,7 @@ class MapService {
     _updateUserMarker(location) {
         // Initialize marker if it doesn't exist
         if (!this._userMarker && this._map) {
-            this._userMarker = new mapboxgl.Marker({
-                color: '#3B82F6',
-                scale: 0.8
-            });
+            this._createUserMarker();
         }
 
         if (!this._userMarker) return; // Exit if map isn't ready yet
@@ -606,10 +590,7 @@ class MapService {
     _updateMapMarker(location) {
         // Initialize marker if it doesn't exist
         if (!this._mapMarker && this._map) {
-            this._mapMarker = new mapboxgl.Marker({
-                color: '#f51324',
-                scale: 0.8
-            });
+            this._createMapMarker();
         }
 
         if (!this._mapMarker) return; // Exit if map isn't ready yet
@@ -1206,6 +1187,72 @@ class MapService {
     async searchNearbyPlaces(location, radius = 500) {
         const apiUrl = this.debugMode ? 'http://localhost:8787' : 'https://nearby-places-worker.sree-35c.workers.dev';
         // ... rest of method
+    }
+
+    fitToBounds(bounds) {
+        if (!bounds) return;
+
+        this._map.fitBounds(bounds, {
+            padding: {
+                top: 50,
+                bottom: 200,  // More padding at bottom for carousel
+                left: 50,
+                right: 50
+            },
+            maxZoom: 16,  // Don't zoom in too far
+            duration: 1000  // Smooth animation
+        });
+    }
+
+    // Keep this method for backward compatibility
+    fitMarkersToView(places) {
+        if (!places?.length) return;
+
+        const bounds = new mapboxgl.LngLatBounds();
+        places.forEach(place => {
+            if (place.geometry?.location) {
+                bounds.extend([
+                    place.geometry.location.lng,
+                    place.geometry.location.lat
+                ]);
+            }
+        });
+
+        this.fitToBounds(bounds);
+    }
+
+    _createUserMarker() {
+        // Create pin marker for user location
+        const el = document.createElement('div');
+        el.className = 'user-marker';
+        el.innerHTML = `
+            <svg width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 20 12 20s12-11 12-20c0-6.63-5.37-12-12-12zm0 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z" 
+                      fill="#E31C5F"/>
+            </svg>
+        `;
+
+        this._userMarker = new mapboxgl.Marker({
+            element: el,
+            anchor: 'bottom'
+        });
+    }
+
+    _createMapMarker() {
+        // Create simple circle marker for map location
+        const el = document.createElement('div');
+        el.className = 'map-marker';
+        el.style.width = '16px';
+        el.style.height = '16px';
+        el.style.borderRadius = '50%';
+        el.style.backgroundColor = '#059669';  // Change to green
+        el.style.border = '3px solid white';
+        el.style.boxShadow = '0 0 0 2px rgba(0,0,0,0.1)';
+
+        this._mapMarker = new mapboxgl.Marker({
+            element: el,
+            anchor: 'center'
+        });
     }
 }
 

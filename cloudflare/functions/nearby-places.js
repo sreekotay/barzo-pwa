@@ -587,31 +587,23 @@ async function fetchWithProvider(url, provider) {
     return await response.json();
 }
 
-export async function onRequest(context) {
-  const RADAR_API_KEY = context.env.RADAR_API_KEY;
-  
-  const API_CONFIG = {
-    [PROVIDER.RADAR]: {
-      url: 'https://api.radar.io/v1/search/places',
-      params: {
-        radius: 1000,
-        limit: 50,
-        categories: 'food-beverage'
-      },
-      headers: {
-        'Authorization': RADAR_API_KEY
-      }
-    },
-    // ... other providers ...
-  };
+// Add this near the top with other constants
+const shouldUseCache = async (cacheKey, noCache, cacheReset) => {
+  if (noCache) return false;
+  if (!cacheReset) return true;
 
-  // ... rest of the code ...
-}
+  const resetTime = parseInt(cacheReset);
+  if (!isNaN(resetTime)) {
+    const metadata = await env.PLACES_KV.getWithMetadata(cacheKey);
+    return metadata && metadata.metadata && metadata.metadata.timestamp > resetTime;
+  }
+  
+  return false;
+};
 
 // Main request handler
 export default {
   async fetch(request, env, ctx) {
-    // Top-level error handling
     try {
       return await this.handleRequest(request, env, ctx);
     } catch (error) {
@@ -621,45 +613,17 @@ export default {
   },
 
   async handleRequest(request, env, ctx) {
-    // Handle CORS preflight
+    // Handle CORS preflight with all necessary headers
     if (request.method === 'OPTIONS') {
       return new Response(null, {
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Google-API-Key',
+          'Access-Control-Max-Age': '86400',
+        },
         status: 200
-      });
-    }
-
-    // Add debug response to check env vars
-    if (!env) {
-      return new Response(JSON.stringify({
-        error: "Environment not provided"
-      }), { 
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json"
-        }
-      });
-    }
-
-    // Add debug response to check specific env vars
-    const debugInfo = {
-      hasGoogleKey: typeof env.GOOGLE_PLACES_API_KEY === 'string',
-      hasSecureKey: typeof env.SECURE_API_KEY_PLACES === 'string',
-      hasKV: typeof env.PLACES_KV === 'object',
-      headers: request.headers ? Array.from(request.headers.entries()) : null
-    };
-
-    if (!env.GOOGLE_PLACES_API_KEY || !env.SECURE_API_KEY_PLACES || !env.PLACES_KV) {
-      return new Response(JSON.stringify({
-        error: "Missing required environment variables or KV binding",
-        debug: debugInfo
-      }), { 
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json"
-        }
       });
     }
 
@@ -667,36 +631,80 @@ export default {
       const url = new URL(request.url);
       const authKey = request.headers?.get("X-API-Key") || '';
       const userGoogleKey = request.headers?.get("X-Google-API-Key");
-      const provider = PROVIDER.GOOGLE;  // Define provider here
+      const provider = PROVIDER.GOOGLE;
       
-      // Cache control parameters
-      const cacheReset = url.searchParams.get("cache-reset");
-      const noCache = url.searchParams.get("no-cache") === 'true';
-
-      // Move shouldUseCache function definition here
-      const shouldUseCache = async (cacheKey) => {
-        if (noCache) return false;
-        if (!cacheReset) return true;
-
-        const resetTime = parseInt(cacheReset);
-        if (!isNaN(resetTime)) {
-          const metadata = await env.PLACES_KV.getWithMetadata(cacheKey);
-          return metadata && metadata.metadata && metadata.metadata.timestamp > resetTime;
-        }
-        
-        return false;
-      };
-
+      // Move auth check after CORS
       if (!authKey || authKey !== env.SECURE_API_KEY_PLACES) {
-        return new Response(JSON.stringify({
-          error: "Unauthorized"
-        }), { 
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { 
           status: 403,
           headers: {
             ...corsHeaders,
             "Content-Type": "application/json"
           }
         });
+      }
+
+      // Check if this is a place details request
+      const placeId = url.searchParams.get("placeId");
+      if (placeId) {
+        // Handle place details request
+        const cacheKey = getDetailsCacheKey(placeId, provider);
+        
+        // Cache control parameters
+        const cacheReset = url.searchParams.get("cache-reset");
+        const noCache = url.searchParams.get("no-cache") === 'true';
+
+        // Check cache if enabled
+        if (!noCache) {
+          const cachedData = await env.PLACES_KV.getWithMetadata(cacheKey, { type: "json" });
+          if (cachedData?.value) {
+            return new Response(JSON.stringify(cachedData.value), {
+              headers: {
+                ...corsHeaders,  // Make sure to include CORS headers
+                "Content-Type": "application/json",
+                "Cache-Control": `public, max-age=${CACHE_DURATION.PRODUCTION.DETAILS}`,
+                "X-Cache-Hit": "true",
+                "X-Cache-Type": "places_details"
+              }
+            });
+          }
+        }
+
+        try {
+          // Fetch fresh data
+          const data = await API_CONFIG[provider].placeDetails(placeId, userGoogleKey || env.GOOGLE_PLACES_API_KEY);
+          const details = API_CONFIG[provider].parsePlaceDetails(data);
+
+          // Cache the results
+          if (details) {
+            await env.PLACES_KV.put(cacheKey, JSON.stringify(details), {
+              expirationTtl: CACHE_DURATION.PRODUCTION.DETAILS,
+              metadata: { timestamp: Date.now() }
+            });
+          }
+
+          return new Response(JSON.stringify(details), {
+            headers: {
+              ...corsHeaders,  // Make sure to include CORS headers
+              "Content-Type": "application/json",
+              "Cache-Control": `public, max-age=${CACHE_DURATION.PRODUCTION.DETAILS}`,
+              "X-Cache-Hit": "false",
+              "X-Cache-Type": "places_details"
+            }
+          });
+        } catch (error) {
+          console.error('Error fetching place details:', error);
+          return new Response(JSON.stringify({
+            error: "Failed to fetch place details",
+            message: error.message
+          }), { 
+            status: 500,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json"
+            }
+          });
+        }
       }
 
       const lat = parseFloat(url.searchParams.get("lat"));
@@ -734,7 +742,7 @@ export default {
       console.log('Cache key:', cacheKey);
       
       // Get useCache value before using it
-      const useCache = await shouldUseCache(cacheKey);
+      const useCache = await shouldUseCache(cacheKey, url.searchParams.get("no-cache") === 'true', url.searchParams.get("cache-reset"));
       console.log('Using cache:', useCache);
 
       // Now use useCache after it's defined
@@ -819,17 +827,10 @@ export default {
         throw error;
       }
     } catch (error) {
-      console.error('Error in handleRequest - after data fetch', error)
+      console.error('Error in handleRequest:', error);
       return new Response(JSON.stringify({
         error: "Internal Server Error",
-        message: error.message,
-        // Include more debug info in development
-        details: env.NODE_ENV === 'development' ? {
-          url: request.url,
-          hasGoogleKey: !!env.GOOGLE_PLACES_API_KEY,
-          hasSecureKey: !!env.SECURE_API_KEY_PLACES,
-          hasKV: !!env.PLACES_KV
-        } : undefined
+        message: error.message
       }), { 
         status: 500,
         headers: {
