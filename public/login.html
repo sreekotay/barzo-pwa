@@ -224,13 +224,13 @@
             const loadingEl = document.getElementById('loading');
             const authInfoEl = document.getElementById('auth-info');
             const authDataEl = document.getElementById('auth-data');
+            const redirect = getQueryParam('redirect');
+            if (redirect) localStorage.setItem('redirect_LEGACY', redirect);
+            const url = new URL(window.location.href);
+            url.search = '';
 
             if (!authToken) {
                 loadingEl.innerHTML = '<p class="text-gray-600">Redirecting to authentication...</p>';
-                const redirect = getQueryParam('redirect');
-                if (redirect) localStorage.setItem('redirect_LEGACY', redirect);
-                const url = new URL(window.location.href);
-                url.search = '';
                 const currentUrl = encodeURIComponent(url.href + '?authToken=${authToken}');
                 window.location.href = `https://chat.barzo.work/otp.html?redirect=${currentUrl}`;
                 //window.location.href = `http://192.168.0.6:8080/otp.html?redirect=${currentUrl}`;
