@@ -8,6 +8,7 @@ export default class CarouselComponent {
         this._isProgrammaticScroll = false;
         this._isTransitioning = false;
         this._currentIntersectionObserver = null;
+        this._onCollapseCallback = null;
         
         // Config for class names and measurements
         this._config = {
@@ -75,6 +76,12 @@ export default class CarouselComponent {
         }, 300);
         
         this._isExpanded = false;
+
+        // Add debug logging for callback
+        console.log('Calling collapse callback:', !!this._onCollapseCallback);
+        if (this._onCollapseCallback) {
+            this._onCollapseCallback();
+        }
     }
 
     getOrCreateScrollContainer() {
@@ -207,5 +214,10 @@ export default class CarouselComponent {
         if (this._currentIntersectionObserver) {
             this._currentIntersectionObserver.disconnect();
         }
+    }
+
+    // Add method to set collapse callback
+    onCollapse(callback) {
+        this._onCollapseCallback = callback;
     }
 } 

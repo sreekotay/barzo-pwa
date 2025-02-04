@@ -64,12 +64,13 @@ const GRID = {
 const PROVIDER = {
   GOOGLE: 'google',   // Google Places API
   MAPBOX: 'mapbox',   // Mapbox Places API
-  RADAR: 'radar'      // Radar.io API
+  RADAR: 'radar',      // Radar.io API
+  DEFAULT: 'google'
 };
 
 // Helper function to map place types to Radar categories
 function getRadarCategory(type) {
-    return TYPE_MAPPING[PROVIDER.RADAR][type] || TYPE_MAPPING[PROVIDER.RADAR].default;
+    return TYPE_MAPPING[PROVIDER.RADAR][type] || TYPE_MAPPING[PROVIDER.DEFAULT];
 }
 
 // Helper function to parse Radar hours format
@@ -353,30 +354,27 @@ const API_CONFIG = {
     nearbySearch: async (params) => {
       try {
         const searchParams = new URLSearchParams({
-          near: `${params.lat},${params.lng}`,
-          radius: params.radius.toString(),
+          radius: params.radius,
           categories: getRadarCategory(params.type),
           limit: '50'
         });
 
-        const url = `https://api.radar.io/v1/search/places?${searchParams}`;
-        console.log('Radar API Request:', {
-          url,
-          headers: { Authorization: params.apiKey },
-          searchParams: Object.fromEntries(searchParams.entries())
+        const url = `https://api.radar.io/v1/search/places?${searchParams}&near=${params.lat},${params.lng}`;
+        
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `${params.apiKey}`,  // Add prj_live_sk_ prefix
+            'Content-Type': 'application/json'
+          }
         });
 
-        const response = await fetch(url, {
-          headers: { 'Authorization': params.apiKey }
-        });
-        
         if (!response.ok) {
-          throw new Error(`Radar search failed: ${response.status}`);
+          throw new Error(`Radar Places API error: ${response.status}`);
         }
         
         return response.json();
       } catch (error) {
-        console.error('Radar API error:', error);
+        console.error('Radar Places API error:', error);
         throw error;
       }
     },
@@ -384,88 +382,25 @@ const API_CONFIG = {
       try {
         const url = `https://api.radar.io/v1/places/${placeId}`;
         
-        console.log('Radar Details Request:', {
-          url,
-          headers: { Authorization: apiKey }
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `prj_live_sk_${apiKey}`,  // Add prj_live_sk_ prefix
+            'Content-Type': 'application/json'
+          }
         });
 
-        const response = await fetch(url, {
-          headers: { 'Authorization': apiKey }
-        });
-        
         if (!response.ok) {
-          throw new Error(`Radar place details failed: ${response.status}`);
+          throw new Error(`Radar Places Details API error: ${response.status}`);
         }
         
         return response.json();
       } catch (error) {
-        console.error('Radar API error:', error);
+        console.error('Radar Places Details API error:', error);
         throw error;
       }
     },
-    parseNearbyResults: (data) => {
-      if (!data.places || !Array.isArray(data.places)) {
-        return [];
-      }
-
-      return data.places.map(place => ({
-        place_id: place._id,
-        name: place.name,
-        geometry: {
-          location: {
-            lat: place.location.coordinates[1],
-            lng: place.location.coordinates[0]
-          }
-        },
-        vicinity: place.formattedAddress || `${place.city}, ${place.state}`,
-        types: place.categories,
-        rating: place.rating,
-        user_ratings_total: place.ratings_count,
-        opening_hours: place.hours ? {
-          open_now: place.hours.status === 'open',
-          weekday_text: place.hours.weekday_text
-        } : undefined,
-        photos: place.logo ? [{
-          photo_reference: place.logo,
-          height: 400,
-          width: 400,
-          html_attributions: []
-        }] : []
-      }));
-    },
-    parsePlaceDetails: (data) => {
-      if (!data.place) {
-        return null;
-      }
-
-      const place = data.place;
-      return {
-        place_id: place._id,
-        name: place.name,
-        formatted_address: place.formattedAddress,
-        geometry: {
-          location: {
-            lat: place.location.coordinates[1],
-            lng: place.location.coordinates[0]
-          }
-        },
-        types: place.categories,
-        rating: place.rating,
-        user_ratings_total: place.ratings_count,
-        opening_hours: place.hours ? {
-          open_now: place.hours.status === 'open',
-          weekday_text: place.hours.weekday_text
-        } : undefined,
-        photos: place.logo ? [{
-          photo_reference: place.logo,
-          height: 400,
-          width: 400,
-          html_attributions: []
-        }] : [],
-        formatted_phone_number: place.phone,
-        website: place.website
-      };
-    }
+    parseNearbyResults: (data) => data.places || [],
+    parsePlaceDetails: (data) => data.place || null
   }
 };
 
@@ -502,6 +437,40 @@ function normalizeMapboxPlace(place) {
   };
 }
 
+// Add coordinate rounding functions
+function getCoordinateGridSize(lat, lng, radius) {
+    // For coordinates, we want much finer precision
+    // ~111,111 meters per degree at equator
+    // radius 50m -> ~0.0001° grid (~11m)
+    // radius 500m -> ~0.0005° grid (~55m)
+    // radius 2000m -> ~0.001° grid (~111m)
+    // radius 5000m -> ~0.002° grid (~222m)
+    return Math.min(radius / 111111, 0.01);  // Cap at 0.01 degrees (~1.1km)
+}
+
+function getRadiusGridSize(radius) {
+    // For radius, we can be more aggressive
+    // radius 50m -> round to nearest 50m
+    // radius 500m -> round to nearest 100m
+    // radius 2000m -> round to nearest 200m
+    // radius 5000m -> round to nearest 500m
+    return Math.pow(2, Math.floor(Math.log2(radius/50))) * 50;
+}
+
+function getNearbySearchCacheKey(lat, lng, radius, type, provider, keywords = []) {
+    // Round coordinates based on radius
+    const coordGridSize = getCoordinateGridSize(lat, lng, radius);
+    const roundedLat = (Math.round(lat / coordGridSize) * coordGridSize).toFixed(5);
+    const roundedLng = (Math.round(lng / coordGridSize) * coordGridSize).toFixed(5);
+    
+    // Round radius logarithmically
+    const roundedRadius = Math.ceil(radius / getRadiusGridSize(radius)) * getRadiusGridSize(radius);
+
+    // Generate cache key - keep provider for flexibility
+    const keywordString = keywords.length > 0 ? `:${keywords.sort().join('+')}` : '';
+    return `${API_VERSION}:nearby:${provider}:${roundedLat},${roundedLng}:${roundedRadius}:${type}${keywordString}`;
+}
+
 // Cache key generation functions
 function getCacheKey(params) {
     const { lat, lng, radius, type, provider = PROVIDER.GOOGLE } = params;
@@ -512,12 +481,6 @@ function getCacheKey(params) {
 function getDetailsCacheKey(placeId, provider) {
     // Cache key for place details includes API version
     return `${API_VERSION}:details:${provider}:${placeId}`;
-}
-
-function getNearbySearchCacheKey(lat, lng, radius, type, provider, keywords = []) {
-    // Generate cache key including keywords for filtered searches
-    const keywordString = keywords.length > 0 ? `:${keywords.sort().join('+')}` : '';
-    return `${API_VERSION}:nearby:${provider}:${lat},${lng}:${radius}:${type}${keywordString}`;
 }
 
 // Helper function to parse OpenStreetMap hours format
@@ -631,7 +594,7 @@ export default {
       const url = new URL(request.url);
       const authKey = request.headers?.get("X-API-Key") || '';
       const userGoogleKey = request.headers?.get("X-Google-API-Key");
-      const provider = PROVIDER.GOOGLE;
+      const provider = PROVIDER.DEFAULT;
       
       // Move auth check after CORS
       if (!authKey || authKey !== env.SECURE_API_KEY_PLACES) {
@@ -660,7 +623,7 @@ export default {
           if (cachedData?.value) {
             return new Response(JSON.stringify(cachedData.value), {
               headers: {
-                ...corsHeaders,  // Make sure to include CORS headers
+                ...corsHeaders,
                 "Content-Type": "application/json",
                 "Cache-Control": `public, max-age=${CACHE_DURATION.PRODUCTION.DETAILS}`,
                 "X-Cache-Hit": "true",
@@ -671,7 +634,8 @@ export default {
         }
 
         try {
-          // Fetch fresh data
+          // Cache miss - log and fetch fresh data
+          console.log('Cache miss for place details:', placeId);
           const data = await API_CONFIG[provider].placeDetails(placeId, userGoogleKey || env.GOOGLE_PLACES_API_KEY);
           const details = API_CONFIG[provider].parsePlaceDetails(data);
 
@@ -685,7 +649,7 @@ export default {
 
           return new Response(JSON.stringify(details), {
             headers: {
-              ...corsHeaders,  // Make sure to include CORS headers
+              ...corsHeaders,
               "Content-Type": "application/json",
               "Cache-Control": `public, max-age=${CACHE_DURATION.PRODUCTION.DETAILS}`,
               "X-Cache-Hit": "false",
@@ -716,47 +680,27 @@ export default {
         return new Response("Invalid latitude or longitude", { status: 400 });
       }
 
-      // Round radius up to nearest step
-      const roundedRadius = Math.ceil(radius / GRID.RADIUS_STEP) * GRID.RADIUS_STEP;
-
-      // Round coordinates to grid
-      const METERS_PER_LAT_DEGREE = 111319.9;
-      const METERS_PER_LNG_DEGREE = Math.cos(lat * Math.PI / 180) * METERS_PER_LAT_DEGREE;
-      
-      const roundedLat = Math.round(lat * METERS_PER_LAT_DEGREE / GRID.SIZE_METERS) * GRID.SIZE_METERS / METERS_PER_LAT_DEGREE;
-      const roundedLng = Math.round(lng * METERS_PER_LNG_DEGREE / GRID.SIZE_METERS) * GRID.SIZE_METERS / METERS_PER_LNG_DEGREE;
-
-      // Format cache key
       const cacheKey = getNearbySearchCacheKey(
-          roundedLat, 
-          roundedLng, 
-          roundedRadius, 
-          type, 
+          lat, 
+          lng, 
+          radius, 
+          type,
           provider,
           url.searchParams.getAll("keyword")
       );
       
       const isDevelopment = request.url.includes('localhost') || request.url.includes('127.0.0.1');
       const cacheDuration = isDevelopment ? CACHE_DURATION.DEVELOPMENT : CACHE_DURATION.PRODUCTION;
-
-      console.log('Cache key:', cacheKey);
-      
-      // Get useCache value before using it
       const useCache = await shouldUseCache(cacheKey, url.searchParams.get("no-cache") === 'true', url.searchParams.get("cache-reset"));
-      console.log('Using cache:', useCache);
 
-      // Now use useCache after it's defined
       if (useCache) {
         try {
           let cachedData = await env.PLACES_KV.getWithMetadata(cacheKey, { type: "json" });
-          console.log('Cache data found:', !!cachedData?.value);
           if (cachedData && cachedData.value) {
               const cacheAge = Date.now() - (cachedData.metadata?.timestamp || 0);
               const maxAge = cacheDuration.KV * 1000;
-              console.log('Cache age:', cacheAge, 'Max age:', maxAge);
               
               if (cacheAge < maxAge) {
-                  console.log('Using cached data');
                   return new Response(JSON.stringify(cachedData.value), {
                       headers: { 
                           ...corsHeaders,
@@ -767,33 +711,37 @@ export default {
                       },
                   });
               }
-              console.log('Cache expired, fetching fresh data');
           }
         } catch (error) {
           console.error("Cache fetch error:", error);
         }
       }
 
-      // Debug logging
-      console.log('Request params:', { lat, lng, radius, type });
-      console.log('Provider:', provider);
-      console.log('API Key available:', !!userGoogleKey || !!env.GOOGLE_PLACES_API_KEY);
+      // Cache miss - log and fetch fresh data
+      console.log('Cache miss for nearby places:', {
+          lat,
+          lng,
+          radius,
+          type,
+          roundedValues: {
+              lat: (Math.round(lat / getCoordinateGridSize(lat, lng, radius)) * getCoordinateGridSize(lat, lng, radius)).toFixed(5),
+              lng: (Math.round(lng / getCoordinateGridSize(lat, lng, radius)) * getCoordinateGridSize(lat, lng, radius)).toFixed(5),
+              radius: Math.ceil(radius / getRadiusGridSize(radius)) * getRadiusGridSize(radius),
+              coordGridSize: getCoordinateGridSize(lat, lng, radius),
+              radiusGridSize: getRadiusGridSize(radius)
+          },
+          cacheKey
+      });
 
       const searchParams = {
         lat,
         lng,
         radius,
         type,
-        apiKey: userGoogleKey || env.GOOGLE_PLACES_API_KEY,
+        apiKey: provider === PROVIDER.RADAR ? env.RADAR_API_KEY : (userGoogleKey || env.GOOGLE_PLACES_API_KEY),
         keywords: url.searchParams.getAll("keyword"),
         provider
       };
-
-      // Debug logging (mask the API key)
-      console.log('Search params:', {
-        ...searchParams,
-        apiKey: searchParams.apiKey ? `${searchParams.apiKey.substring(0, 8)}...` : 'missing'
-      });
 
       try {
         const data = await API_CONFIG[provider].nearbySearch(searchParams);
@@ -804,14 +752,11 @@ export default {
 
         const normalizedResults = API_CONFIG[provider].parseNearbyResults(data);
         
-        // Add logging when storing in cache
         if (normalizedResults && normalizedResults.length > 0) {
-          console.log('Storing in cache:', cacheKey);
           await env.PLACES_KV.put(cacheKey, JSON.stringify(normalizedResults), { 
             expirationTtl: cacheDuration.KV,
             metadata: { timestamp: Date.now() }
           });
-          console.log('Stored in cache');
         }
 
         return new Response(JSON.stringify(normalizedResults), {
