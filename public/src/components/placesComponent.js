@@ -141,9 +141,9 @@ export default class PlacesComponent {
                     e.stopPropagation();
                     if (this._dotElement.style.opacity === '0') {
                         // If dot is invisible, fetch data without expanding
-                        const location = this._locationService.getUserLocationCached();
+                        const location = this._locationService.getMapLocation();
                         if (location) {
-                            this._fetchNearbyPlaces(location, false, true); // Pass true as third param for dotClick
+                            this._fetchNearbyPlaces(location, false, true);
                         }
                     } else {
                         // If dot is visible, just toggle markers
@@ -174,20 +174,15 @@ export default class PlacesComponent {
         console.log(`[${this._containerSelector}] Handling header click, carousel expanded:`, this._carousel._isExpanded);
         if (!this._carousel._isExpanded) {
             // If collapsed, fetch data first without expanding
-            const location = this._locationService.getUserLocationCached();
+            const location = this._locationService.getMapLocation();
             if (location) {
                 console.log(`[${this._containerSelector}] Fetching places before expansion`);
-                this._fetchNearbyPlaces(location, true);
-                // Notify parent about expansion
+                // Notify parent about expansion first
                 if (this._config.onExpand) {
                     this._config.onExpand();
                 }
-                // Fit to this component's markers and enable pulsing
-                const bounds = this._markerManager.getMarkerBounds();
-                if (bounds) {
-                    this._mapService.fitToBounds(bounds);
-                }
-                this._markerManager.setPulsing(true);
+                // Fetch places - map fitting will happen after fetch
+                this._fetchNearbyPlaces(location, true);
             }
         } else {
             // If expanded, collapse and disable pulsing
@@ -197,7 +192,7 @@ export default class PlacesComponent {
             // Force clear any lingering pulse states
             this._markerManager.clear();
             // Immediately recreate markers without pulse
-            const location = this._locationService.getUserLocationCached();
+            const location = this._locationService.getMapLocation();
             if (location && this._currentPlaces?.length) {
                 this._markerManager.updateMarkers(this._currentPlaces, this._config.markerColors);
             }
@@ -292,8 +287,8 @@ export default class PlacesComponent {
 
             const places = await response.json();
             if (places) {
-                const userLocation = this._locationService.getUserLocationCached();
-                const processedPlaces = this._processPlacesData(places, userLocation);
+                const mapLocation = this._locationService.getMapLocation();
+                const processedPlaces = this._processPlacesData(places, mapLocation);
                 
                 // Update markers and show dot
                 this._markerManager.updateMarkers(processedPlaces, this._config.markerColors);
@@ -306,12 +301,14 @@ export default class PlacesComponent {
                 // Only expand if this was from a header click (not from dot click)
                 if (fromHeaderClick) {
                     this._carousel.expand();
-                    // Fit to this component's markers and enable pulsing
-                    const bounds = this._markerManager.getMarkerBounds();
-                    if (bounds) {
-                        this._mapService.fitToBounds(bounds);
+                    // Only fit to markers after we have the data
+                    if (processedPlaces.length > 0) {
+                        const bounds = this._markerManager.getMarkerBounds();
+                        if (bounds) {
+                            this._mapService.fitToBounds(bounds);
+                        }
+                        this._markerManager.setPulsing(true);
                     }
-                    this._markerManager.setPulsing(true);
                 }
                 
                 // Only update content if we're expanded or this was a header click
