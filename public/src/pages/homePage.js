@@ -22,6 +22,18 @@ export default class HomePage {
                 </div>
                 <div id="entertainment-container" class="mb-4"></div>
 
+                <div class="flex px-4 mb-1 items-center">
+                    <h3 class="text-sm font-medium text-gray-500">CIGAR & HOOKAH</h3>
+                    <div class="w-2 h-2 rounded-full bg-purple-500 mx-2"></div>
+                </div>
+                <div id="cigar-hookah-container" class="mb-4"></div>
+
+                <div class="flex px-4 mb-1 items-center">
+                    <h3 class="text-sm font-medium text-gray-500">KARAOKE & LIVE MUSIC</h3>
+                    <div class="w-2 h-2 rounded-full bg-amber-500 mx-2"></div>
+                </div>
+                <div id="music-container" class="mb-4"></div>
+
                 <!-- Rest of home content -->
             </div>
         `;
@@ -59,6 +71,42 @@ export default class HomePage {
                     closed: '#9CA3AF',
                     pulse: '#3B82F6'
                 }
+            }
+        );
+
+        // Initialize cigar and hookah component
+        window.cigarHookahComponent = new PlacesComponent(
+            this.mapService,
+            locationService,
+            '#cigar-hookah-container',
+            {
+                placeTypes: ['bar'],
+                maxResults: 15,
+                endpoint: 'supabase',
+                markerColors: {
+                    open: '#9333EA',  // purple-600
+                    closed: '#9CA3AF',
+                    pulse: '#9333EA'
+                },
+                keywords: ['cigar', 'hookah', 'shisha']
+            }
+        );
+
+        // Initialize karaoke and live music component
+        window.musicComponent = new PlacesComponent(
+            this.mapService,
+            locationService,
+            '#music-container',
+            {
+                placeTypes: ['bar', 'night_club'],
+                maxResults: 15,
+                endpoint: 'supabase',
+                markerColors: {
+                    open: '#D97706',  // amber-600
+                    closed: '#9CA3AF',
+                    pulse: '#D97706'
+                },
+                keywords: ['karaoke', 'live music']
             }
         );
     }

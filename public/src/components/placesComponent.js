@@ -159,7 +159,21 @@ export default class PlacesComponent {
                 lng: Math.round(location.lng * 10000) / 10000
             };
 
-            const response = await fetch(`${PLACES_API_URL}/nearby-places?lat=${roundedLocation.lat}&lng=${roundedLocation.lng}&radius=${Math.floor(radius / 100) * 100}&type=${this._config.placeTypes[0]}`, {
+            // Build URL with all parameters including keywords
+            const url = new URL(`${PLACES_API_URL}/nearby-places`);
+            url.searchParams.set('lat', roundedLocation.lat);
+            url.searchParams.set('lng', roundedLocation.lng);
+            url.searchParams.set('radius', Math.floor(radius / 100) * 100);
+            url.searchParams.set('type', this._config.placeTypes[0]);
+            
+            // Add keywords if they exist in config
+            if (this._config.keywords) {
+                this._config.keywords.forEach(keyword => {
+                    url.searchParams.append('keyword', keyword);
+                });
+            }
+
+            const response = await fetch(url.toString(), {
                 headers: {
                     'X-API-Key': 'TESTING_KEY_wNTrO9zYD8cU__Pzmbs0fid80_EIqzhp7tW_FCpADDo',
                     'Content-Type': 'application/json'
