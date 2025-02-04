@@ -13,6 +13,16 @@ let currentIntersectionObserver = null;
 let isUpdating = false;
 let messageMarkersLayer = null;
 
+// Add this timeout promise wrapper function at the top level
+function withTimeout(promise, timeout) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Timeout after ${timeout}ms`)), timeout)
+        )
+    ]);
+}
+
 async function getClientKeys() {
     const response = await fetch('/api/getClientKeys');
     const data = await response.json();
@@ -187,10 +197,22 @@ async function startupThisApp() {
         try {
             mapService._supabase = supabase.createClient(clientKeys.supabaseUrl, clientKeys.supabaseAnonKey);
             const session = JSON.parse(supabaseSession);
-            await mapService._supabase.auth.setSession(session.access_token);
+            
+            // Wrap setSession with timeout
+            try {
+                await withTimeout(
+                    mapService._supabase.auth.setSession(session.access_token),
+                    3000 // 3 second timeout
+                );
+            } catch (timeoutError) {
+                console.error('Session setup timed out:', timeoutError);
+                mapService._supabase = null; // Force redirect to login
+                throw timeoutError;
+            }
+
             const {data, error} = await mapService._supabase.auth.getUser();
             if (error) mapService._supabase = null; // force a reload of the page below
-            console.log ("supabasUser", data);
+            console.log("supabasUser", data);
         } catch (error) {
             console.error('Error setting Supabase session:', error);
             console.error('[SHOULD REDIRECT]', error);
