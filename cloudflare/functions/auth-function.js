@@ -6,8 +6,10 @@ const envURL = {
 };
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': '*',  // Or your specific domain like 'https://your-frontend.com'
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Max-Age': '86400',  // 24 hours
 };
 
 async function createToken(userId, jwtSecret, user_metadata) {
@@ -69,7 +71,13 @@ export default {
   async fetch(request, env, ctx) {
     // Handle CORS preflight requests
     if (request.method === 'OPTIONS') {
-      return new Response('ok', { headers: corsHeaders });
+      return new Response(null, {
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Max-Age': '86400',
+        }
+      });
     }
 
     try {

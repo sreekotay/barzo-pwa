@@ -46,8 +46,9 @@
                 if (!userInfo.id) {
                     throw new Error('No user ID available');
                 }
-
-                const response = await fetch(`${apiUrl}/auth-function`, {
+                /*
+                let apiUrl = 'https://auth-function.sree-35c.workers.dev'
+                const response = await fetch(`${apiUrl}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -61,8 +62,10 @@
                     }
                 });
                 const data = await response.json();
+                /**/
 
-                /*const { data, error } = await supabase.functions.invoke('external-auth', {
+                ///*
+                const { data, error } = await supabase.functions.invoke('external-auth', {
                     body: {
                         externalToken: {
                             id: userInfo.id,
@@ -75,7 +78,7 @@
                     console.error('Error:', error);
                     throw error;
                 }
-*/
+                /**/
 
                 console.log('Success:', data);
 
