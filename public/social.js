@@ -258,22 +258,27 @@ async function startupThisApp() {
 
 // Update the initialize function
 export async function initialize() {
-    await startupThisApp();
-    locationService.requestGeoLocation();
-    const { closeMenu } = initializeMobileMenu();
-    
-    // Setup navigation links
-    document.querySelectorAll('a[href^="#"]').forEach(link => {
-        link.addEventListener('click', (e) => {
-            const isMobile = window.innerWidth < 1024;
-            if (isMobile) {
-                closeMenu();
-            }
+    try {
+        await startupThisApp();
+        locationService.requestGeoLocation();
+        const { closeMenu } = initializeMobileMenu();
+        
+        // Setup navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                const isMobile = window.innerWidth < 1024;
+                if (isMobile) {
+                    closeMenu();
+                }
 
+            });
         });
-    });
 
-    initMapResize();
+        initMapResize();
+    } catch (error) {
+        console.error('Error initializing app:', error);
+        throw error;
+    }
 }
 
 function initMapResize() {
