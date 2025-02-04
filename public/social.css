@@ -199,10 +199,12 @@
     border-radius: 50%;
     border: 2px solid white;
     box-shadow: 0 0 4px rgba(0,0,0,0.3);
+    transition: border-color 0.2s ease-out;
 }
 
 .place-marker.selected {
     z-index: 1;
+    border-width: 2px;
 }
 
 .place-marker.selected::after {
@@ -236,8 +238,8 @@
 }
 
 .mapboxgl-popup-content {
-    padding: 15px !important;
-    background: #000000 !important;  /* Force black background */
+    padding: 0 !important;
+    background: rgba(0,0,0,0.5) !important;  /* Force black background */
     color: #ffffff !important;
     border-radius: 4px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
@@ -292,8 +294,24 @@
     transform: translateY(-8px) rotate(-45deg);
 }
 
+/* Mobile Sidebar */
 #mobile-sidebar {
-    transition: transform 0.3s ease-in-out;
+    transform: translateX(100%);  /* Start fully off-screen */
+    transition: transform 0.3s ease-in-out, visibility 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    visibility: hidden;  /* Hide by default */
+    opacity: 0;  /* Start fully transparent */
+}
+
+#mobile-sidebar.visible {
+    transform: translateX(0);  /* Slide in when visible */
+    visibility: visible;
+    opacity: 1;  /* Fade in when visible */
+}
+
+@media (min-width: 1024px) {  /* lg breakpoint */
+    #mobile-sidebar {
+        display: none;  /* Always hide on desktop */
+    }
 }
 
 /* Places List Styles */
@@ -333,11 +351,14 @@
     min-width: 280px;
     background: white;
     padding: 0;
-    _box-shadow: 0 1px 4px rgba(0,0,0,0.05);
     overflow: hidden;
     border: 2px solid #d7d7d7;
-    transition: border-color 0.2s ease-in-out;
+    transition: border-color 0.2s ease-out;
     border-radius: 2px;
+}
+
+.place-card.selected {
+    border-color: var(--highlight-color);
 }
 
 .place-card[data-expanded="true"] {
@@ -345,7 +366,7 @@
 }
 
 .place-card[data-selected="true"] {
-    border-color: var(--highlight-color);
+    /* Remove this style */
 }
 
 .place-card .place-image {
@@ -875,4 +896,21 @@ header .profile-pic {
 
 .map-marker:hover {
     transform: scale(1.1);
+}
+
+.place-marker-popup {
+    z-index: 1;
+}
+
+.place-marker-popup .mapboxgl-popup-content {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    font-size: 14px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.place-marker-popup .mapboxgl-popup-tip {
+    border-top-color: rgba(0, 0, 0, 0.8);
 }

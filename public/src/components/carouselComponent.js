@@ -182,16 +182,25 @@ export default class CarouselComponent {
         return window.innerWidth < 1024;
     }
 
-    selectCard(cardId) {
-        this._container.querySelectorAll(`.${this._config.cardClassName}`).forEach(card => {
-            card.dataset.selected = (card.dataset.placeId === cardId).toString();
+    selectCard(placeId) {
+        this._container.querySelectorAll('.place-card').forEach(card => {
+            card.classList.toggle('selected', card.dataset.placeId === placeId);
         });
     }
 
-    clearSelection() {
-        this._container.querySelectorAll(`.${this._config.cardClassName}`).forEach(card => {
-            card.dataset.selected = "false";
-        });
+    clearSelection(placeId = null) {
+        if (placeId) {
+            // Clear specific card
+            const card = this._container.querySelector(`.place-card[data-place-id="${placeId}"]`);
+            if (card) {
+                card.classList.remove('selected');
+            }
+        } else {
+            // Clear all cards
+            this._container.querySelectorAll('.place-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+        }
     }
 
     destroy() {

@@ -1,11 +1,16 @@
 export default class MarkerManager {
-    constructor(mapService, name = 'unnamed') {
+    constructor(mapService, name = 'unnamed', options = {}) {
         this._mapService = mapService;
         this._markers = new Map(); // placeId -> marker
         this._selectedMarkerId = null;
         this._markerClickCallbacks = [];
         this._isPulsing = false;  // Initialize as false
         this._name = name;  // Store name for logging
+        this._popup = null;  // Add popup property
+        this._options = {
+            showPopups: false,  // Default to no popups
+            ...options
+        };
         this._defaultColors = {
             open: '#00A572',  // Always use green for open places
             closed: '#9CA3AF',
@@ -116,6 +121,12 @@ export default class MarkerManager {
 
     // Select/deselect marker
     selectMarker(placeId) {
+        // Remove existing popup if any
+        if (this._popup) {
+            this._popup.remove();
+            this._popup = null;
+        }
+
         this._selectedMarkerId = placeId;
         this._markers.forEach((marker) => {
             const el = marker.getElement();
@@ -129,6 +140,23 @@ export default class MarkerManager {
                         this._currentColors.open : 
                         this._currentColors.closed;
                     el.style.setProperty('--pulse-color', this._currentColors.pulse);
+                    el.style.borderColor = this._currentColors.pulse; // Add border color
+
+                    // Only show popup if enabled
+                    if (this._options.showPopups) {
+                        this._popup = new mapboxgl.Popup({
+                            closeButton: false,
+                            closeOnClick: false,
+                            offset: 25,
+                            className: 'place-marker-popup'
+                        })
+                        .setLngLat(marker.getLngLat())
+                        .setHTML(`<div class="text-sm font-medium">${marker.placeData.name}</div>`)
+                        .addTo(this._mapService.getMap());
+                    }
+                } else {
+                    // Reset border color for unselected markers
+                    el.style.borderColor = 'white';
                 }
             }
         });
@@ -142,6 +170,10 @@ export default class MarkerManager {
     // Clear all markers
     clear() {
         console.log(`[${this._name}] Clearing markers and pulsing state`);
+        if (this._popup) {
+            this._popup.remove();
+            this._popup = null;
+        }
         this._markers.forEach(marker => {
             const el = marker.getElement();
             if (el) {
@@ -196,5 +228,13 @@ export default class MarkerManager {
                 }
             }
         });
+    }
+
+    // Add method to hide popup
+    hidePopup() {
+        if (this._popup) {
+            this._popup.remove();
+            this._popup = null;
+        }
     }
 }

@@ -55,7 +55,9 @@ export default class PlacesComponent {
         const componentName = this._containerSelector.replace('#', '').replace('-container', '');
 
         // Initialize properties
-        this._markerManager = new MarkerManager(this._mapService, componentName);
+        this._markerManager = new MarkerManager(this._mapService, componentName, {
+            showPopups: false  // Already false by default
+        });
         this._currentPlaces = [];
         this._currentIntersectionObserver = null;
         this._isUpdating = false;
@@ -479,9 +481,8 @@ export default class PlacesComponent {
 
     _createPlaceCard(place) {
         const card = document.createElement('div');
-        card.className = 'place-card';
+        card.className = 'place-card p-4 cursor-pointer hover:bg-gray-50';
         card.dataset.placeId = place.place_id;
-        card.dataset.selected = 'false';
         
         // Add custom property for highlight color
         card.style.setProperty('--highlight-color', this._config.markerColors.open);
@@ -511,6 +512,28 @@ export default class PlacesComponent {
         `;
 
         this._updatePlaceCard(card, place);
+
+        // Add click handler for place details
+        card.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.handlePlaceClick(place);
+        });
+
+        // Add hover handlers for desktop
+        if (!this._carousel.isMobile()) {
+            card.addEventListener('mouseenter', () => {
+                if (this._isUpdating) return;
+                this._markerManager.selectMarker(place.place_id);
+                this._carousel.selectCard(place.place_id);
+            });
+
+            card.addEventListener('mouseleave', () => {
+                if (this._isUpdating) return;
+                this._markerManager.selectMarker(null);
+                this._carousel.clearSelection();
+            });
+        }
+
         return card;
     }
 
@@ -571,6 +594,12 @@ export default class PlacesComponent {
         if (distanceEl) {
             distanceEl.textContent = place.formattedDistance;
         }
+
+        // Re-add click handler
+        card.onclick = (e) => {
+            e.preventDefault();
+            this.handlePlaceClick(place);
+        };
     }
 
     _scrollCardIntoView(placeId) {
@@ -608,42 +637,49 @@ export default class PlacesComponent {
             this._currentIntersectionObserver.disconnect();
         }
 
-        // Create new observer
-        this._currentIntersectionObserver = new IntersectionObserver(
-            (entries) => {
-                // Only process if carousel is expanded
-                if (!this._carousel._isExpanded) {
-                    return;
-                }
-
-                entries.forEach(entry => {
-                    const card = entry.target;
-                    const placeId = card.dataset.placeId;
-                    
-                    if (entry.isIntersecting) {
-                        // Only highlight if carousel is expanded
-                        if (this._carousel._isExpanded) {
-                            this._markerManager.selectMarker(placeId);
-                        }
-                    } else {
-                        // When card scrolls out of view, remove highlight
-                        const el = this._markerManager._markers.get(placeId)?.getElement();
-                        if (el) {
-                            el.classList.remove('selected');
-                        }
+        // Only set up intersection observer on mobile
+        if (this._carousel.isMobile()) {
+            // Create new observer
+            this._currentIntersectionObserver = new IntersectionObserver(
+                (entries) => {
+                    // Only process if carousel is expanded
+                    if (!this._carousel._isExpanded) {
+                        return;
                     }
-                });
-            },
-            {
-                root: placesScroll,
-                threshold: 0.5
-            }
-        );
 
-        // Observe all cards
-        placesScroll.querySelectorAll('.place-card').forEach(card => {
-            this._currentIntersectionObserver.observe(card);
-        });
+                    entries.forEach(entry => {
+                        const card = entry.target;
+                        const placeId = card.dataset.placeId;
+                        
+                        if (entry.isIntersecting) {
+                            // Only highlight if carousel is expanded
+                            if (this._carousel._isExpanded) {
+                                this._markerManager.selectMarker(placeId);
+                                this._carousel.selectCard(placeId);
+                            }
+                        } else {
+                            // When card scrolls out of view, remove highlight from both marker and card
+                            const el = this._markerManager._markers.get(placeId)?.getElement();
+                            if (el) {
+                                el.classList.remove('selected');
+                            }
+                            this._carousel.clearSelection(placeId);
+                        }
+                    });
+                },
+                {
+                    root: placesScroll,
+                    threshold: 0.5
+                }
+            );
+
+            // Observe all cards
+            placesScroll.querySelectorAll('.place-card').forEach(card => {
+                this._currentIntersectionObserver.observe(card);
+            });
+        }
+
+        // For desktop, we'll rely on hover/click handlers which are already set up
     }
 
     handlePlaceClick(place) {
