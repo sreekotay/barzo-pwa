@@ -21,7 +21,12 @@ export default class MarkerManager {
         // Track existing markers to remove stale ones
         const updatedMarkerIds = new Set();
         
-        places.forEach(place => {
+        // Sort places by latitude (north to south)
+        const sortedPlaces = [...places].sort((a, b) => 
+            b.geometry.location.lat - a.geometry.location.lat
+        );
+        
+        sortedPlaces.forEach(place => {
             const placeId = place.place_id;
             updatedMarkerIds.add(placeId);
 

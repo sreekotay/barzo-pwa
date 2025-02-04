@@ -58,7 +58,7 @@ async function createMessageMarkers() {
             mapService._map.removeLayer(messageMarkersLayer);
         }
 
-        // Fetch messages from Supabase
+        // Fetch messages from Supabase and sort by latitude
         const { data: messages, error } = await mapService._supabase
             .from('messages')
             .select('*');
@@ -72,6 +72,9 @@ async function createMessageMarkers() {
             console.log('No messages found - this might be an RLS issue');
             return;
         }
+
+        // Sort messages by latitude (north to south)
+        messages.sort((a, b) => b.latitude - a.latitude);
 
         // Create GeoJSON features with jittered coordinates and varied weights
         const features = messages.map(msg => {

@@ -10,7 +10,7 @@
 <body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 md:p-8">
     <div class="w-full max-w-lg md:max-w-2xl lg:max-w-4xl mx-auto space-y-8">
         <div id="loading" class="text-center p-4">
-            <p class="text-gray-600 text-lg">Loading...</p>
+            <p class="text-gray-600 text-lg">Authenticating...</p>
         </div>
         
         <div id="auth-info" class="hidden bg-white rounded-xl shadow-lg p-4 sm:p-6 md:p-8 space-y-6">
@@ -122,6 +122,59 @@
             window.location.href = url.toString();
         }
 
+        async function syncProfile(user, barzoUser) {
+            // Get Supabase profile
+            console.log('🔍 Fetching Supabase profile');
+            let { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('handle, avatar_url')
+                .eq('id', user.id)
+                .single();
+
+            if (profileError) {
+                console.error('❌ Error fetching profile:', profileError);
+                return;
+            }
+
+            // Prepare profile updates
+            const updates = {};
+            
+            // Update handle from nickname
+            if (barzoUser.nickname && barzoUser.nickname !== profile?.handle) {
+                console.log('📝 Handle needs update:', {
+                    current: profile?.handle,
+                    new: barzoUser.nickname
+                });
+                updates.handle = barzoUser.nickname;
+            }
+
+            // Update avatar_url from profileImage
+            if (barzoUser.profileImage && barzoUser.profileImage !== profile?.avatar_url) {
+                console.log('🖼️ Avatar URL needs update:', {
+                    current: profile?.avatar_url,
+                    new: barzoUser.profileImage
+                });
+                updates.avatar_url = barzoUser.profileImage;
+            }
+
+            // Update profile if needed
+            if (Object.keys(updates).length > 0) {
+                console.log('🔄 Updating profile with:', updates);
+                const { error: updateError } = await supabase
+                    .from('profiles')
+                    .update(updates)
+                    .eq('id', user.id);
+
+                if (updateError) {
+                    console.error('❌ Error updating profile:', updateError);
+                } else {
+                    console.log('✅ Profile updated successfully');
+                }
+            } else {
+                console.log('✅ Profile already in sync, no updates needed');
+            }
+        }
+
         // Modify the existing getUserInfo function to include provisioning
         async function getUserInfo() {
             // ----------------
@@ -134,9 +187,10 @@
             //const data = await apiCall('GET', `v1/feeds/places/events?latitude=27.964157&longitude=-82.452606&radiusInFeet=300000&userId=${globalAuthToken.token.identity.userId}`);
             //const data = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}/resources`);
             //console.log(JSON.stringify(data, null, 2));
-            const userInfo = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}`);
-            await provisionSupabaseUser(userInfo); // Add user provisioning
-            return userInfo;
+            const barzoUser = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}`);
+            const supaSession = await provisionSupabaseUser(barzoUser); // Add user provisioning
+            await syncProfile(supaSession.user, barzoUser);
+            return barzoUser;
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
