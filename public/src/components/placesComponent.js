@@ -648,6 +648,51 @@ export default class PlacesComponent {
         );
         return distance <= threshold;
     }
+
+    async initialize() {
+        // Set up intersection observer
+        this._setupIntersectionObserver();
+        
+        // ... rest of initialization ...
+    }
+
+    _setupIntersectionObserver() {
+        // Clean up existing observer if it exists
+        if (this._currentIntersectionObserver) {
+            this._currentIntersectionObserver.disconnect();
+        }
+
+        this._currentIntersectionObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const placeId = entry.target.dataset.placeId;
+                        if (placeId) {
+                            this._mapService.selectMarker(placeId);
+                        }
+                    }
+                });
+            },
+            {
+                root: null,
+                rootMargin: '0px',
+                threshold: 0.5
+            }
+        );
+
+        // Observe all place cards
+        document.querySelectorAll('.place-card').forEach(card => {
+            this._currentIntersectionObserver.observe(card);
+        });
+    }
+
+    destroy() {
+        // Clean up observer when component is destroyed
+        if (this._currentIntersectionObserver) {
+            this._currentIntersectionObserver.disconnect();
+            this._currentIntersectionObserver = null;
+        }
+    }
 } 
 
 // Export showPlaceDetails for use by other components

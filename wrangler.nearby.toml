@@ -1,0 +1,17 @@
+name = "nearby-places"
+workers_dev = true
+compatibility_date = "2023-01-01"
+account_id = "35c8144f5743ece70eece776a17c0277"
+main = "cloudflare/functions/nearby-places.js"
+
+[observability.logs]
+enabled = true
+
+# KV namespace configuration
+[[kv_namespaces]]
+binding = "PLACES_KV"
+id = "0ef6fb2b2e93475a8e3c41db695f9136"
+preview_id = "7fb49c091ac54ac99051205d00398e26"
+
+[env.production]
+vars = { ENVIRONMENT = "production" } 

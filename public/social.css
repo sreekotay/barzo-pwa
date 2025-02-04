@@ -842,3 +842,14 @@ header .profile-pic {
 .mapboxgl-ctrl-group > button + button {
     border-top: 1px solid #606060 !important;
 }
+
+.circle-number {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    border-radius: 50%;
+    text-align: center;
+    border: 2px solid currentColor;
+    margin-left: 10px;
+}

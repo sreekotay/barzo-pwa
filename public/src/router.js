@@ -5,14 +5,15 @@ import PlaceDetailsPage from './pages/placeDetailsPage.js';
 
 export default class Router {
     constructor(mapService) {
-        this.mapService = mapService;
-        this.currentPage = null;
+        this._mapService = mapService;
+        this._currentPage = null;
+        this._currentObserver = null;
         this.routes = {
-            '': () => new HomePage(this.mapService),
-            'home': () => new HomePage(this.mapService),
+            '': () => new HomePage(this._mapService),
+            'home': () => new HomePage(this._mapService),
             'settings': () => new SettingsPage(),
             'profile': () => new ProfilePage(),
-            'place': () => new PlaceDetailsPage(this.mapService)
+            'place': () => new PlaceDetailsPage(this._mapService)
         };
         
         this.sheetRoutes = new Set(['place', 'profile']);
@@ -21,6 +22,17 @@ export default class Router {
     }
 
     async handleRoute(route = '') {
+        // Clean up existing observers before changing routes
+        if (this._currentObserver) {
+            this._currentObserver.disconnect();
+            this._currentObserver = null;
+        }
+
+        // Clean up existing components
+        if (this._currentPage) {
+            this._currentPage.destroy?.();
+        }
+
         const [mainRoute, underlyingRoute] = route.split('##');
         
         // Parse the main route and params, handling the case where params are part of a sheet route
@@ -43,7 +55,7 @@ export default class Router {
             return;
         }
 
-        this.currentPage = getPage();
+        this._currentPage = getPage();
         
         if (this.sheetRoutes.has(basePath)) {
             // Handle sheet route
@@ -62,22 +74,22 @@ export default class Router {
                 if (!placeId) {
                     return this.handleRoute('home');
                 }
-                await this.currentPage.render(placeId);
+                await this._currentPage.render(placeId);
             } else {
-                await this.currentPage.render();
+                await this._currentPage.render();
             }
         } else {
             // Handle normal route
             this.currentSheetDepth = 0;
             this.routeStack[0] = basePath;
             
-            const html = await this.currentPage.render();
+            const html = await this._currentPage.render();
             const mainContent = document.querySelector('#main-content');
             mainContent.innerHTML = html;
             mainContent.className = 'relative z-20';
             
-            if (this.currentPage.afterRender) {
-                await this.currentPage.afterRender();
+            if (this._currentPage.afterRender) {
+                await this._currentPage.afterRender();
             }
         }
     }
@@ -92,5 +104,20 @@ export default class Router {
             } 
         }
         window.location.hash = '';
+    }
+
+    async _loadHomePage() {
+        const { default: PlacesComponent } = await import('./components/placesComponent.js');
+        const placesContainer = document.getElementById('places-container');
+        
+        // Clear existing content
+        placesContainer.innerHTML = '';
+        
+        // Create new places component
+        window.placesComponent = new PlacesComponent(this._mapService);
+        this._currentPage = window.placesComponent;
+        
+        // Component will handle its own intersection observer setup
+        await window.placesComponent.initialize();
     }
 } 

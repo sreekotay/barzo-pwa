@@ -2,9 +2,11 @@ import locationService from '/src/services/locationService.js';
 import MapService from '/src/services/mapService.js';
 import CDNize from '../utils/cdnize.js';
 
+const barzoApiUrl = 'https://api.public.barzo.com';
 class ProfileComponent {
     constructor() {
         this.userData = null;
+        this.socialStats = null;
         // Create custom event for data loading
         this.dataLoadedEvent = new CustomEvent('profileDataLoaded', {
             detail: { component: this }
@@ -32,18 +34,26 @@ class ProfileComponent {
             const userId = authToken.token.identity.userId;
             const accessToken = authToken.token.accessToken;
 
-            // Fetch user profile data
-            const response = await fetch(`https://api.public.barzo.com/v1/users/${userId}`, {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`
-                }
-            });
+            // Fetch both profile data and social stats in parallel
+            const [profileResponse, statsResponse] = await Promise.all([
+                fetch(`${barzoApiUrl}/v1/users/${userId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                }),
+                fetch(`${barzoApiUrl}/v1/users/${userId}/stats/social`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                })
+            ]);
 
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+            if (!profileResponse.ok || !statsResponse.ok) {
+                throw new Error(`HTTP error! status: ${profileResponse.status || statsResponse.status}`);
             }
 
-            this.userData = await response.json();
+            this.userData = await profileResponse.json();
+            this.socialStats = await statsResponse.json();
             
             // Dispatch event when data is loaded
             document.dispatchEvent(this.dataLoadedEvent);
@@ -120,35 +130,50 @@ class ProfileComponent {
 
                     <div class="receipt-row">
                         <span class="receipt-label"><span class="text-red-500">FREE</span> Drinks on Barzo available</span>
-                        <span class="receipt-value"><a href="#" class="never-link">REDEEM</a><span style="padding-left: 10px;"> 6</span></span>
+                        <span class="receipt-value"><a href="#" class="never-link">REDEEM</a><span class="circle-number"> 6</span></span>
                     </div>
 
                     <div class="receipt-row">
                         <span class="receipt-label">Drinks Bought for You</span>
-                        <span class="receipt-value"><a href="#" class="never-link">VIEW</a><span style="padding-left: 10px;"> 3</span></span>
+                        <span class="receipt-value"><a href="#" class="never-link">VIEW</a><span class="circle-number"> 3</span></span>
                     </div>
 
                     <div class="receipt-row">
                         <span class="receipt-label">Drinks You Bought</span>
-                        <span class="receipt-value"><a href="#" class="never-link">MANAGE</a><span style="padding-left: 10px;"> 8</span></span>
+                        <span class="receipt-value"><a href="#" class="never-link">MANAGE</a><span class="circle-number"> 8</span></span>
                     </div>
 
                     <div class="receipt-divider"></div>
                     <div style="margin: 10px 0; text-align: center;">*** ACTIVITY SUMMARY ***</div>
 
                     <div class="receipt-row">
-                        <span class="receipt-label">Places Visited:</span>
-                        <span class="receipt-value">42</span>
+                        <span class="receipt-label">Following:</span>
+                        <span class="receipt-value">${this.socialStats?.following || 0}</span>
                     </div>
 
                     <div class="receipt-row">
-                        <span class="receipt-label">Friends Made:</span>
-                        <span class="receipt-value">156</span>
+                        <span class="receipt-label">Followers:</span>
+                        <span class="receipt-value">${this.socialStats?.followers || 0}</span>
                     </div>
 
                     <div class="receipt-row">
-                        <span class="receipt-label">Events Attended:</span>
-                        <span class="receipt-value">23</span>
+                        <span class="receipt-label">Friends:</span>
+                        <span class="receipt-value">${this.socialStats?.friends || 0}</span>
+                    </div>
+
+                    <div class="receipt-row">
+                        <span class="receipt-label">Posts:</span>
+                        <span class="receipt-value">${this.socialStats?.posts || 0}</span>
+                    </div>
+
+                    <div class="receipt-row">
+                        <span class="receipt-label">Comments:</span>
+                        <span class="receipt-value">${this.socialStats?.comments || 0}</span>
+                    </div>
+
+                    <div class="receipt-row">
+                        <span class="receipt-label">Likes:</span>
+                        <span class="receipt-value">${this.socialStats?.likes || 0}</span>
                     </div>
 
                     <div class="receipt-divider"></div>

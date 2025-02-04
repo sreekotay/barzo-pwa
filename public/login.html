@@ -33,6 +33,13 @@
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3eGt1d2VzeWZidmN5d2dubGZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY4NzMyMjYsImV4cCI6MjA1MjQ0OTIyNn0.Lq6SIJwpIAWhGbPHlemlwtPKsVD1PReOwA-zcYiFoCk'
         const supabase = window.supabase.createClient(supabaseUrl, supabaseKey)
 
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                            window.location.hostname === '127.0.0.1';
+        const apiUrl =  isLocalhost ? 
+                            'http://localhost:49662' : 
+                            'https://nearby-places-worker.sree-35c.workers.dev';
+
+
         // Add new function to provision user
         async function provisionSupabaseUser(userInfo) {
             try {
@@ -40,7 +47,11 @@
                     throw new Error('No user ID available');
                 }
 
-                const { data, error } = await supabase.functions.invoke('external-auth', {
+                const response = await fetch(`${apiUrl}/auth-function`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: {
                         externalToken: {
                             id: userInfo.id,
@@ -49,11 +60,22 @@
                         }
                     }
                 });
+                const data = await response.json();
 
+                /*const { data, error } = await supabase.functions.invoke('external-auth', {
+                    body: {
+                        externalToken: {
+                            id: userInfo.id,
+                            bearer: globalAuthToken.token.accessToken,
+                            env: 'prod' // or 'dev'
+                        }
+                    }
+                });
                 if (error) {
                     console.error('Error:', error);
                     throw error;
                 }
+*/
 
                 console.log('Success:', data);
 
@@ -186,6 +208,7 @@
             //const data = await apiCall('GET', `v1/feeds/fyp?latitude=27.964157&longitude=-82.452606&radiusInFeet=30000&userId=${globalAuthToken.token.identity.userId}`);
             //const data = await apiCall('GET', `v1/feeds/places/events?latitude=27.964157&longitude=-82.452606&radiusInFeet=300000&userId=${globalAuthToken.token.identity.userId}`);
             //const data = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}/resources`);
+            //const data = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}/stats/social`);
             //console.log(JSON.stringify(data, null, 2));
             const barzoUser = await apiCall('GET', `/v1/users/${globalAuthToken.token.identity.userId}`);
             const supaSession = await provisionSupabaseUser(barzoUser); // Add user provisioning
