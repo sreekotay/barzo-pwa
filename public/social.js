@@ -299,12 +299,14 @@ export async function initialize() {
         // Setup navigation links
         document.querySelectorAll('a[href^="#"]').forEach(link => {
             link.addEventListener('click', (e) => {
-                const isMobile = window.innerWidth < 1024;
-                if (isMobile) {
-                    closeMenu();
-                }
-
+                closeMenu(); // Always close menu on any navigation click
             });
+        });
+
+        // Also add click handler to the entire sidebar to close on any click
+        const sidebar = document.getElementById('mobile-sidebar');
+        sidebar.addEventListener('click', (e) => {
+            closeMenu();
         });
 
         initMapResize();
@@ -395,7 +397,7 @@ function initializeMobileMenu() {
 
     function closeMenu() {
         hamburger.classList.remove('open');
-        sidebar.classList.add('translate-x-full');
+        sidebar.classList.remove('visible'); // Use visible class instead of translate
         overlay.classList.add('hidden');
         document.body.classList.remove('overflow-hidden');
     }
