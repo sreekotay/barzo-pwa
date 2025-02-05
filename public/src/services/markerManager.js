@@ -169,7 +169,7 @@ export default class MarkerManager {
 
     // Clear all markers
     clear() {
-        console.log(`[${this._name}] Clearing ${this._markers.size} markers`);
+        console.log(`[${this._name}] Clearing markers and pulsing state`);
         if (this._popup) {
             this._popup.remove();
             this._popup = null;
@@ -188,18 +188,14 @@ export default class MarkerManager {
     }
 
     hideMarkers() {
-        console.log(`[${this._name}] Hiding ${this._markers.size} markers`);
         this._markers.forEach(marker => {
-            const el = marker.getElement();
-            el.style.display = 'none';
+            marker.remove();
         });
     }
 
     showMarkers() {
-        console.log(`[${this._name}] Showing ${this._markers.size} markers`);
         this._markers.forEach(marker => {
-            const el = marker.getElement();
-            el.style.display = '';
+            marker.addTo(this._mapService.getMap());
         });
     }
 

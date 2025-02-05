@@ -7,7 +7,6 @@ const PLACES_API_URL = getApiUrl();
 
 export default class PlacesComponent {
     constructor(mapService, locationService, containerSelector, config = {}) {
-        // Set services first
         this._mapService = mapService;
         this._locationService = locationService;
         this._containerSelector = containerSelector;
@@ -21,13 +20,27 @@ export default class PlacesComponent {
                 pulse: '#E31C5F'
             },
             onExpand: null,
+            fitMapOnExpand: false,
             ...config
         };
 
+        // Add sheet template
+        this.sheetTemplate = `
+            <div class="place-details-backdrop"></div>
+            <div class="place-details-sheet">
+                <button class="close-button absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                <div class="details">
+                    <!-- Details will be injected here -->
+                </div>
+            </div>
+        `;
+
         this._dotElement = null;
         this._markersVisible = false;
-
-        // Now call setup after services are set
         this._setupComponent();
     }
 
@@ -39,18 +52,12 @@ export default class PlacesComponent {
             return;
         }
 
-        // Verify required services exist
-        if (!this._mapService || !this._locationService) {
-            console.error(`Required services not initialized for ${this._containerSelector}`);
-            return;
-        }
-
         // Get component name from container ID for logging
         const componentName = this._containerSelector.replace('#', '').replace('-container', '');
 
         // Initialize properties
         this._markerManager = new MarkerManager(this._mapService, componentName, {
-            showPopups: false
+            showPopups: false  // Already false by default
         });
         this._currentPlaces = [];
         this._currentIntersectionObserver = null;
@@ -63,25 +70,18 @@ export default class PlacesComponent {
         // Bind methods
         this.updatePlaces = this.updatePlaces.bind(this);
         this._handleMarkerClick = this._handleMarkerClick.bind(this);
+        this._handleLocationChange = this._handleLocationChange.bind(this);
 
         // Set up listeners
         this._mapService.onPlacesChange(this.updatePlaces);
         this._markerManager.onMarkerClick(this._handleMarkerClick);
-        
-        // Update when location changes if carousel is expanded
-        if (this._locationService.onMapLocationChange) {
-            this._locationService.onMapLocationChange(
-                (location) => {
-                    if (this._carousel._isExpanded) {
-                        this._fetchNearbyPlaces(location, false);
-                    }
-                },
-                {
-                    realtime: false,
-                    debounceMs: 1000
-                }
-            );
-        }
+        this._locationService.onMapLocationChange(
+            this._handleLocationChange,
+            {
+                realtime: false,
+                debounceMs: 1000
+            }
+        );
 
         // Listen for autocomplete matches
         this._mapService.onAutocompletePlaceMatch((place) => {
@@ -101,17 +101,36 @@ export default class PlacesComponent {
             }
         });
 
+        // Wait for map to be ready before initial fetch
+        if (this._mapService.isMapReady()) {
+            const location = this._locationService.getMapLocation();
+            if (location) {
+                this._fetchNearbyPlaces(location);
+            }
+        } else {
+            this._mapService.onMapReady(() => {
+                const location = this._locationService.getMapLocation();
+                if (location) {
+                    this._fetchNearbyPlaces(location);
+                }
+            });
+        }
+
         // Add header click handler setup
         this._setupHeaderClickHandler();
 
         // Add collapse handler
         this._carousel.onCollapse(() => {
-            console.log(`[${this._containerSelector}] Carousel collapsed`);
+            console.log(`[${this._containerSelector}] Carousel collapsed, hiding markers`);
             this._markerManager.hideMarkers();
             this._markersVisible = false;
+            // Update dot opacity
             if (this._dotElement) {
                 this._dotElement.style.opacity = '0';
             }
+            // Force clear any lingering pulse states
+            this._markerManager.setPulsing(false);
+            this._markerManager.clear();
         });
     }
 
@@ -138,19 +157,19 @@ export default class PlacesComponent {
                 if (e.target === this._dotElement) {
                     e.stopPropagation();
                     if (this._dotElement.style.opacity === '0') {
-                        // If dot is invisible, fetch data and show markers
+                        // If dot is invisible, fetch data without expanding
                         const location = this._locationService.getMapLocation();
                         if (location) {
-                            this._fetchNearbyPlaces(location, false);
+                            this._fetchNearbyPlaces(location, false, true);
                         }
                     } else {
-                        // If dot is visible, just hide markers
+                        // If dot is visible, just toggle markers
                         this._toggleMarkers();
                     }
                     return;
                 }
                 
-                // Handle header click
+                console.log('Header clicked for:', this._containerSelector);
                 this._handleHeaderClick();
             });
         }
@@ -159,31 +178,46 @@ export default class PlacesComponent {
     _toggleMarkers() {
         if (this._markersVisible) {
             this._markerManager.hideMarkers();
-            this._dotElement.style.opacity = '0';
+            this._dotElement.style.opacity = '0.5';
             this._markersVisible = false;
         } else {
-            const location = this._locationService.getMapLocation();
-            if (location) {
-                this._fetchNearbyPlaces(location, false);  // fromHeaderClick = false
-            }
+            this._markerManager.showMarkers();
+            this._dotElement.style.opacity = '1';
+            this._markersVisible = true;
         }
     }
 
     _handleHeaderClick() {
         console.log(`[${this._containerSelector}] Handling header click, carousel expanded:`, this._carousel._isExpanded);
         if (!this._carousel._isExpanded) {
-            // If collapsed, fetch data and expand
+            // If collapsed, fetch data first without expanding
             const location = this._locationService.getMapLocation();
             if (location) {
-                this._fetchNearbyPlaces(location, true);  // fromHeaderClick = true
+                console.log(`[${this._containerSelector}] Fetching places before expansion`);
+                // Notify parent about expansion first
+                if (this._config.onExpand) {
+                    this._config.onExpand();
+                }
+                // Fetch places - map fitting will happen after fetch
+                this._fetchNearbyPlaces(location, true);
             }
         } else {
-            // If expanded, just collapse (collapse handler will handle cleanup)
+            // If expanded, just collapse - markers will be handled by collapse callback
+            console.log(`[${this._containerSelector}] Collapsing carousel`);
             this._carousel.collapse();
         }
     }
 
-    // Modify reset to not fetch automatically
+    // Add method to handle external collapse request
+    handleExternalCollapse() {
+        // Only collapse if currently expanded
+        if (this._carousel._isExpanded) {
+            console.log(`[${this._containerSelector}] External collapse request, hiding markers`);
+            this._carousel.collapse();
+        }
+    }
+
+    // Call this when switching tabs/routes
     reset() {
         // Clean up existing resources
         if (this._carousel) {
@@ -193,17 +227,43 @@ export default class PlacesComponent {
             this._markerManager.clear();
         }
         
+        // NOTE: Do not clear container innerHTML - it causes flicker
+        // if (this._container) {
+        //     this._container.innerHTML = '';
+        // }
+        
         // Re-setup the component
         this._setupComponent();
+        
+        // Re-fetch places if map is ready and we have a location
+        if (this._mapService.isMapReady()) {
+            const location = this._locationService.getMapLocation();
+            if (location) {
+                this._fetchNearbyPlaces(location);
+            }
+        }
 
-        // Just reset state, don't fetch
+        // Reset dot state and hide markers
         if (this._dotElement) {
             this._dotElement.style.opacity = '0';
+            this._markerManager.hideMarkers();
+            this._markerManager.setPulsing(false);
         }
         this._markersVisible = false;
     }
 
-    async _fetchNearbyPlaces(location, fromHeaderClick = false) {
+    async _handleLocationChange(location) {
+        if (this._carousel._isExpanded) {
+            this._fetchNearbyPlaces(location);
+        }
+    }
+
+    async _fetchNearbyPlaces(location, fromHeaderClick = false, fromDotClick = false) {
+        // Don't fetch if collapsed (unless it's from a header click or dot click)
+        if (!this._carousel._isExpanded && !fromHeaderClick && !fromDotClick) {
+            return;
+        }
+
         try {
             const radius = this._calculateRadius() * 2 / 3;
             const roundedLocation = {
@@ -248,26 +308,28 @@ export default class PlacesComponent {
                 const mapLocation = this._locationService.getMapLocation();
                 const processedPlaces = this._processPlacesData(places, mapLocation);
                 
-                // Always update and show markers
+                // Update markers and show dot
                 this._markerManager.updateMarkers(processedPlaces, this._config.markerColors);
-                this._markerManager.showMarkers();
-                this._markersVisible = true;
                 if (this._dotElement) {
                     this._dotElement.style.opacity = '1';
+                    this._markerManager.showMarkers();
+                    this._markersVisible = true;
                 }
                 
-                // Only expand if from header click
+                // Only expand and fit to markers if this was from a header click
                 if (fromHeaderClick) {
                     this._carousel.expand();
-                    if (processedPlaces.length > 0) {
+                    // Only fit to markers if fitMapOnExpand is true
+                    if (this._config.fitMapOnExpand && processedPlaces.length > 0) {
                         const bounds = this._markerManager.getMarkerBounds();
                         if (bounds) {
                             this._mapService.fitToBounds(bounds);
                         }
+                        this._markerManager.setPulsing(true);
                     }
                 }
                 
-                // Update content if expanded or expanding
+                // Only update content if we're expanded or this was a header click
                 if (this._carousel._isExpanded || fromHeaderClick) {
                     this._updatePlacesContent(processedPlaces, fromHeaderClick);
                 }

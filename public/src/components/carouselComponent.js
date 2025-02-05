@@ -77,8 +77,7 @@ export default class CarouselComponent {
         
         this._isExpanded = false;
 
-        // Add debug logging for callback
-        console.log('Calling collapse callback:', !!this._onCollapseCallback);
+        // Call collapse callback if it exists
         if (this._onCollapseCallback) {
             this._onCollapseCallback();
         }
