@@ -91,7 +91,7 @@ export default class HomePage {
                     closed: '#9CA3AF',
                     pulse: '#9333EA'
                 },
-                keywords: ['cigar', 'hookah', 'shisha'],
+                keywords: ['cigar', 'hookah'],
                 onExpand: () => this._handleCarouselExpand('cigar')
             }
         );

@@ -1,46 +1,62 @@
 /**
- * Google Places API Proxy with Caching
+ * Cloudflare Worker for Places API Integration
  * 
- * This worker provides a cached interface to Google Places API with two main endpoints:
- * 1. Nearby Search: Find places near a location
- * 2. Place Details: Get detailed information about a specific place
+ * This worker provides a cached interface to various place data providers (primarily Google Places API)
+ * with support for nearby search and place details. It includes coordinate grid-based caching to improve
+ * cache hit rates and reduce API costs.
  * 
- * Features:
- * - Cloudflare KV caching with metadata
- * - Cache control options (no-cache, cache-reset)
- * - Support for user-provided Google API keys
- * - Coordinate rounding for better cache hits
- * - Cache status headers
+ * Core Features:
+ * - Nearby place search with configurable radius and type
+ * - Detailed place information lookup
+ * - Grid-based coordinate caching
+ * - Cache control with version-based invalidation
+ * - Request rate limiting and error handling
  * 
- * Endpoints:
+ * Supported Providers:
+ * - Google Places API (primary)
+ * - Radar.io API (alternative)
+ * 
+ * API Endpoints:
  * 1. Nearby Search:
  *    GET /nearby-places?lat={latitude}&lng={longitude}&radius={meters}&type={place_type}
+ *    Optional: &keyword={search terms}
  * 
  * 2. Place Details:
- *    GET /nearby-places?placeId={google_place_id}
+ *    GET /nearby-places?placeId={place_id}
  * 
  * Headers:
- * - X-API-Key: Required. Your API key for this service
- * - X-Google-API-Key: Optional. Your own Google Places API key
+ * - X-API-Key: Required. Service authentication key
+ * - X-Google-API-Key: Optional. Custom Google Places API key
  * 
- * Query Parameters:
+ * Cache Control:
  * - no-cache: Set to 'true' to bypass cache
- * - cache-reset: Timestamp to ignore cache entries older than this time
+ * - cache-reset: Unix timestamp to ignore older cache entries
  * 
- * Cache Headers in Response:
- * - X-Cache-Hit: 'true' or 'false'
- * - X-Cache-Type: 'places_nearby' or 'places_details'
+ * Response Headers:
+ * - X-Cache-Hit: Indicates if response was served from cache
+ * - X-Cache-Type: Type of cache entry (places_nearby or places_details)
+ * 
+ * Grid Configuration:
+ * - Coordinates are rounded based on search radius
+ * - Grid size adapts to maintain optimal cache hits
+ * - Minimum radius enforced for consistency
  * 
  * Example Usage:
- * curl "http://localhost:8787/nearby-plcaaces?lat=27.9506&lng=-82.4572" \
+ * ```
+ * // Nearby search
+ * curl "https://api.example.com/nearby-places?lat=27.9506&lng=-82.4572&radius=500&type=restaurant" \
  *   -H "X-API-Key: your_api_key"
  * 
- * curl "http://localhost:8787/nearby-places?placeId=ChIJv-_K-JzhwogRteKYG94IedY" \
+ * // Place details
+ * curl "https://api.example.com/nearby-places?placeId=ChIJN1t_tDeuEmsRUsoyG83frY4" \
  *   -H "X-API-Key: your_api_key"
+ * ```
+ * 
+ * @version v1.0.1
  */
 
 // Version number for cache invalidation
-const API_VERSION = 'v1.0.0';
+const API_VERSION = 'v1.0.2';
 
 // CORS headers for cross-origin requests
 const corsHeaders = {
@@ -63,9 +79,8 @@ const GRID = {
 // Available data providers
 const PROVIDER = {
   GOOGLE: 'google',   // Google Places API
-  MAPBOX: 'mapbox',   // Mapbox Places API
-  RADAR: 'radar',      // Radar.io API
-  DEFAULT: 'google'
+  RADAR: 'radar',     // Radar.io API
+  DEFAULT: 'google'   // Default provider
 };
 
 // Helper function to map place types to Radar categories
@@ -112,11 +127,6 @@ const TYPE_MAPPING = {
     restaurant: 'restaurant',
     bar: 'bar',
     cafe: 'cafe'
-  },
-  [PROVIDER.MAPBOX]: {
-    restaurant: 'restaurant',
-    bar: 'bar,pub',
-    cafe: 'cafe,coffee'
   },
   [PROVIDER.RADAR]: {
     bar: 'bar',
@@ -167,9 +177,9 @@ const CACHE_DURATION = {
         DETAILS: 604800   // 1 week for place details
     },
     DEVELOPMENT: {
-        KV: 60,          // 1 minute for development
-        BROWSER: 60,     // 1 minute for development
-        DETAILS: 60      // 1 minute for development
+        KV: 600,          // 1 minute for development
+        BROWSER: 600,     // 1 minute for development
+        DETAILS: 600      // 1 minute for development
     }
 };
 
@@ -186,19 +196,41 @@ const API_CONFIG = {
           key: params.apiKey
         });
 
-        // Add keyword filtering if provided
+        // Add keyword filtering if provided - using proper Google Places API format
         if (params.keywords && params.keywords.length > 0) {
-          searchParams.append('keyword', params.keywords.join('|'));
+          // Google Places API expects a single keyword string
+          // Multiple keywords should be space-separated, not pipe-separated
+          searchParams.append('keyword', params.keywords.join(' '));
         }
+
+        // Debug logging
+        console.log('Search Parameters:', {
+          lat: params.lat,
+          lng: params.lng,
+          radius: params.radius,
+          type: params.type,
+          keywords: params.keywords,
+          // Don't log the API key
+        });
 
         const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${searchParams}`;
         
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Google Places API error: ${response.status}`);
-        }
+        // Log URL without API key
+        console.log('Request URL:', url.replace(params.apiKey, 'REDACTED'));
         
-        return response.json();
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (!response.ok) {
+          console.error('Google Places API error details:', data);
+          throw new Error(`Google Places API error: ${response.status} - ${data.error_message || 'Unknown error'}`);
+        }
+
+        // Log response status and result count
+        console.log('Response status:', response.status);
+        console.log('Results count:', data.results?.length || 0);
+        
+        return data;
       } catch (error) {
         console.error('Google Places API error:', error);
         throw error;
@@ -233,122 +265,6 @@ const API_CONFIG = {
     },
     parseNearbyResults: (data) => data.results,
     parsePlaceDetails: (data) => data.result
-  },
-  [PROVIDER.MAPBOX]: {
-    nearbySearch: async (params) => {
-      try {
-        let url;
-        if (params.type.includes('bar') || params.type.includes('restaurant')) {
-          const amenityTypes = params.type.includes('bar') ? 'bar|nightclub' : 'restaurant';
-          url = `https://overpass-api.de/api/interpreter?data=[out:json];` +
-                `(node[amenity~"${amenityTypes}"](around:${params.radius},${params.lat},${params.lng}););out;`;
-        } else {
-          const searchParams = new URLSearchParams({
-            access_token: params.apiKey,
-            radius: params.radius,
-            limit: '40',
-            layers: 'poi_label'
-          });
-          url = `https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/tilequery/${params.lng},${params.lat}.json?${searchParams}`;
-        }
-
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Mapbox API error: ${response.status}`);
-        }
-        
-        return response.json();
-      } catch (error) {
-        console.error('Mapbox API error:', error);
-        throw error;
-      }
-    },
-    placeDetails: (placeId, apiKey) => 
-        `https://overpass-api.de/api/interpreter?data=[out:json];` +
-        `(node(${placeId});way(${placeId});relation(${placeId}););out tags;`,
-    parseNearbyResults: (data) => {
-        // Check if this is Overpass data
-        if (data.elements) {
-            return data.elements.map(place => ({
-                place_id: place.id.toString(),
-                name: place.tags.name || 'Unnamed Location',
-                vicinity: place.tags['addr:street'] ? 
-                    `${place.tags['addr:housenumber'] || ''} ${place.tags['addr:street']}` : 
-                    (place.tags.address || place.tags.name || 'No address'),
-                geometry: {
-                    location: {
-                        lat: place.lat,
-                        lng: place.lon
-                    }
-                },
-                types: [place.tags.amenity].filter(Boolean),
-                rating: null,
-                user_ratings_total: null,
-                photos: [],
-                opening_hours: { 
-                    open_now: null,
-                    weekday_text: place.tags.opening_hours ? [place.tags.opening_hours] : []
-                }
-            }));
-        }
-
-        // Original Mapbox parsing for other types
-        return data.features.map(place => ({
-            place_id: place.id,
-            name: place.properties.name,
-            vicinity: place.properties.address || place.properties.name,
-            geometry: {
-                location: {
-                    lat: place.geometry.coordinates[1],
-                    lng: place.geometry.coordinates[0]
-                }
-            },
-            types: [place.properties.type].filter(Boolean),
-            rating: null,
-            user_ratings_total: null,
-            photos: [],
-            opening_hours: { open_now: null }
-        }));
-    },
-    parsePlaceDetails: (data) => {
-        if (!data.elements || !data.elements[0]) {
-            throw new Error('No place details found');
-        }
-        const element = data.elements[0];
-        const tags = element.tags || {};
-
-        // Parse opening hours
-        const openingHours = parseOSMHours(tags.opening_hours);
-
-        return {
-            place_id: element.id.toString(),
-            name: tags.name || 'Unnamed Location',
-            formatted_address: [
-                tags['addr:housenumber'],
-                tags['addr:street'],
-                tags['addr:city'],
-                tags['addr:postcode']
-            ].filter(Boolean).join(', ') || tags.address || '',
-            geometry: {
-                location: {
-                    lat: element.lat || element.center?.lat,
-                    lng: element.lon || element.center?.lon
-                }
-            },
-            types: [tags.amenity, tags.leisure, tags.shop].filter(Boolean),
-            current_opening_hours: openingHours,
-            formatted_phone_number: tags.phone || tags['contact:phone'],
-            website: tags.website || tags['contact:website'] || tags.url,
-            price_level: tags.price_level ? parseInt(tags.price_level) : null,
-            rating: null,
-            user_ratings_total: null,
-            photos: [],
-            serves_breakfast: tags.breakfast === 'yes' || tags.cuisine?.includes('breakfast'),
-            serves_lunch: tags.lunch === 'yes' || tags.cuisine?.includes('lunch'),
-            serves_dinner: tags.dinner === 'yes' || tags.cuisine?.includes('dinner'),
-            serves_brunch: tags.brunch === 'yes' || tags.cuisine?.includes('brunch')
-        };
-    }
   },
   [PROVIDER.RADAR]: {
     nearbySearch: async (params) => {
@@ -404,39 +320,6 @@ const API_CONFIG = {
   }
 };
 
-// Normalize Mapbox place to match Google Places format
-function normalizeMapboxPlace(place) {
-  // Mapbox doesn't provide opening hours directly
-  // We need to handle this missing data
-  const opening_hours = place.properties.hours ? {
-    open_now: null, // Mapbox doesn't provide this
-    periods: [], // Would need to parse Mapbox's hours format
-    weekday_text: [] // Would need to convert from Mapbox format
-  } : null;
-
-  return {
-    place_id: place.id,
-    name: place.text,
-    geometry: {
-      location: {
-        lat: place.center[1],
-        lng: place.center[0]
-      }
-    },
-    formatted_address: place.place_name,
-    types: place.properties.category?.split(',') || [],
-    opening_hours,
-    formatted_phone_number: place.properties.tel || null,
-    website: place.properties.website || null,
-    price_level: place.properties.price ? place.properties.price.length : null, // Convert '$' to number
-    rating: null, // Mapbox doesn't provide ratings
-    user_ratings_total: null,
-    photos: place.properties.image ? [{
-      photo_reference: place.properties.image
-    }] : []
-  };
-}
-
 // Add coordinate rounding functions
 function getCoordinateGridSize(lat, lng, radius) {
     // For coordinates, we want much finer precision
@@ -481,73 +364,6 @@ function getCacheKey(params) {
 function getDetailsCacheKey(placeId, provider) {
     // Cache key for place details includes API version
     return `${API_VERSION}:details:${provider}:${placeId}`;
-}
-
-// Helper function to parse OpenStreetMap hours format
-function parseOSMHours(openingHours) {
-    if (!openingHours) return null;
-
-    try {
-        const now = new Date();
-        const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-        const currentDay = dayNames[now.getDay()];
-        const currentTime = now.getHours() * 100 + now.getMinutes();
-
-        // Split rules by semicolon
-        const rules = openingHours.split(';').map(r => r.trim());
-        
-        for (const rule of rules) {
-            // Match day ranges and time ranges
-            const match = rule.match(/([A-Za-z,\-]+)\s+(.+)/);
-            if (!match) continue;
-
-            const [_, days, times] = match;
-            
-            // Check if current day is in the range
-            if (days.includes(currentDay)) {
-                // Parse time ranges
-                const timeRanges = times.split(',').map(t => t.trim());
-                
-                for (const timeRange of timeRanges) {
-                    const [start, end] = timeRange.split('-')
-                        .map(t => {
-                            const [hours, minutes = '00'] = t.split(':');
-                            return parseInt(hours) * 100 + parseInt(minutes);
-                        });
-
-                    if (currentTime >= start && currentTime <= end) {
-                        return {
-                            open_now: true,
-                            weekday_text: [openingHours]
-                        };
-                    }
-                }
-            }
-        }
-
-        return {
-            open_now: false,
-            weekday_text: [openingHours]
-        };
-
-    } catch (error) {
-        console.error('Error parsing OSM hours:', error);
-        return null;
-    }
-}
-
-async function fetchWithProvider(url, provider) {
-    const config = API_CONFIG[provider];
-    const headers = {
-        'Content-Type': 'application/json',
-        ...(config.headers || {})
-    };
-
-    const response = await fetch(url, { headers });
-    if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-    }
-    return await response.json();
 }
 
 // Add this near the top with other constants
@@ -695,7 +511,14 @@ export default {
 
       if (useCache) {
         try {
+          console.log('Checking cache for key:', cacheKey);
           let cachedData = await env.PLACES_KV.getWithMetadata(cacheKey, { type: "json" });
+          console.log('Cache result:', {
+              hit: !!cachedData?.value,
+              timestamp: cachedData?.metadata?.timestamp,
+              age: Date.now() - (cachedData?.metadata?.timestamp || 0)
+          });
+          
           if (cachedData && cachedData.value) {
               const cacheAge = Date.now() - (cachedData.metadata?.timestamp || 0);
               const maxAge = cacheDuration.KV * 1000;
@@ -753,9 +576,15 @@ export default {
         const normalizedResults = API_CONFIG[provider].parseNearbyResults(data);
         
         if (normalizedResults && normalizedResults.length > 0) {
+          console.log('Writing to cache:', {
+              key: cacheKey,
+              resultCount: normalizedResults.length,
+              expirationTtl: cacheDuration.KV
+          });
+          
           await env.PLACES_KV.put(cacheKey, JSON.stringify(normalizedResults), { 
-            expirationTtl: cacheDuration.KV,
-            metadata: { timestamp: Date.now() }
+              expirationTtl: cacheDuration.KV,
+              metadata: { timestamp: Date.now() }
           });
         }
 
