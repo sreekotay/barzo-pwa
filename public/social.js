@@ -171,25 +171,7 @@ async function createMessageMarkers() {
     }
 }
 
-async function startupThisApp() {
-    try {clientKeys = JSON.parse(localStorage.getItem('clientKeys'))} catch (e) {clientKeys = null} 
-    if (!clientKeys) {
-        clientKeys = await getClientKeys();
-        if (clientKeys) localStorage.setItem('clientKeys', JSON.stringify(clientKeys));
-    } else {
-        getClientKeys().then(cks=>{
-            if (cks && cks!=JSON.stringify(clientKeys)) localStorage.setItem('clientKeys', cks);
-        });
-    }
-
-    mapService = new MapService(locationService, {
-        mapContainer: 'map',
-        accessToken: 'pk.eyJ1Ijoic3JlZWJhcnpvIiwiYSI6ImNtNXdwOHl1aDAwaGgyam9vbHdjYnIyazQifQ.StZ77F8-5g43kq29k2OLaw',
-        googleApiKey: clientKeys.googleKey,
-        searchInput: 'search-container',
-        searchInputLevel: 'neighborhood'
-    });
-
+async function userAuthInit() {
     const authToken = localStorage.getItem('authToken');
     const supabaseSession = localStorage.getItem('supabaseSessionJWT');
 
@@ -217,11 +199,36 @@ async function startupThisApp() {
             console.error('Error setting Supabase session:', error);
             console.error('[SHOULD REDIRECT]', error);
         }
+        createMessageMarkers(); // should be async
+
     }
 
     if (!mapService._supabase) {
         window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.href);
     }
+}
+
+async function startupThisApp() {
+    try {clientKeys = JSON.parse(localStorage.getItem('clientKeys'))} catch (e) {clientKeys = null} 
+    if (!clientKeys) {
+        clientKeys = await getClientKeys();
+        if (clientKeys) localStorage.setItem('clientKeys', JSON.stringify(clientKeys));
+    } else {
+        getClientKeys().then(cks=>{
+            if (cks && cks!=JSON.stringify(clientKeys)) localStorage.setItem('clientKeys', cks);
+        });
+    }
+
+    mapService = new MapService(locationService, {
+        mapContainer: 'map',
+        accessToken: 'pk.eyJ1Ijoic3JlZWJhcnpvIiwiYSI6ImNtNXdwOHl1aDAwaGgyam9vbHdjYnIyazQifQ.StZ77F8-5g43kq29k2OLaw',
+        googleApiKey: clientKeys.googleKey,
+        searchInput: 'search-container',
+        searchInputLevel: 'neighborhood'
+    });
+
+    userAuthInit();
+ 
 
     // Register callbacks before map initialization
     mapService.onPlacesChange((places) => {
@@ -262,7 +269,6 @@ async function startupThisApp() {
 
     // Now initialize the map
     mapService.initialize();
-    createMessageMarkers(); // should be async
     
     // Initialize profile component for header icon
     window.profileComponent = new ProfileComponent();
