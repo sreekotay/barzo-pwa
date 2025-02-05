@@ -66,7 +66,7 @@
     <link rel="stylesheet" href="/social.css">
     <link rel="stylesheet" href="/src/styles/receipt.css">
 </head>
-<body class="bg-gray-50 min-h-screen flex flex-col">
+<body class="bg-gray-50 min-h-screen max-h-screen flex flex-col">
     
     <div style="position: relative; padding-top: 48px; background:#444">
         <div id="map"></div>
@@ -77,7 +77,7 @@
     <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40 hidden"></div>
 
     <!--- main app container-->
-    <div class="flex min-h-screen" style="position: relative;"> 
+    <div id="main-app" class="flex flex-grow" style="position: relative; overflow-y: auto;"> 
         <!-- Desktop Sidebar - hidden on mobile -->
         <div class="hidden lg:block w-64 bg-white shadow-lg">
             <div class="p-4">

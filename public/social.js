@@ -382,7 +382,7 @@ function initializeMobileMenu() {
 
     function toggleMenu() {
         hamburger.classList.toggle('open');
-        sidebar.classList.toggle('translate-x-full');
+        sidebar.classList.toggle('visible');
         overlay.classList.toggle('hidden');
         document.body.classList.toggle('overflow-hidden');
     }

@@ -12,25 +12,25 @@ export default class HomePage {
         return `
             <div class="pt-4">
                 <div class="flex px-4 mb-1 items-center" data-carousel-id="bars">
-                    <h3 class="text-sm font-medium text-gray-500">BARS & CLUBS</h3>
+                    <h3 class="text-sm font-bold text-black-800">BARS & CLUBS</h3>
                     <div class="w-2 h-2 rounded-full bg-red-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="bar"></div>
                 </div>
                 <div id="bar-container"></div>
 
                 <div class="flex px-4 mb-1 items-center" data-carousel-id="restaurants">
-                    <h3 class="text-sm font-medium text-gray-500">RESTAURANTS</h3>
+                    <h3 class="text-sm font-bold text-black-800">RESTAURANTS</h3>
                     <div class="w-2 h-2 rounded-full bg-amber-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="restaurant"></div>
                 </div>
                 <div id="restaurant-container"></div>
 
                 <div class="flex px-4 mb-1 items-center" data-carousel-id="cigar">
-                    <h3 class="text-sm font-medium text-gray-500">CIGAR & HOOKAH</h3>
+                    <h3 class="text-sm font-bold text-black-800">CIGAR & HOOKAH</h3>
                     <div class="w-2 h-2 rounded-full bg-purple-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="cigar"></div>
                 </div>
                 <div id="cigar-hookah-container"></div>
 
                 <div class="flex px-4 mb-1 items-center" data-carousel-id="music">
-                    <h3 class="text-sm font-medium text-gray-500">KARAOKE & LIVE MUSIC</h3>
+                    <h3 class="text-sm font-bold text-black-800">KARAOKE & LIVE MUSIC</h3>
                     <div class="w-2 h-2 rounded-full bg-green-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="music"></div>
                 </div>
                 <div id="music-container"></div>
@@ -132,7 +132,7 @@ export default class HomePage {
             });
         }
 
-        // Set up intersection observer for carousel headers
+        // Set up intersection observer for carousel containers
         this._setupCarouselObserver();
     }
 
@@ -161,28 +161,27 @@ export default class HomePage {
             this._intersectionObserver.disconnect();
         }
 
-        const scrollContainer = document.querySelector('div#main-content');
-        console.log('Using scroll container:', scrollContainer);
+        // Get the scrolling container - this is where the overflow-y: auto is set
+        const scrollContainer = document.querySelector('div#main-app');
+        console.log('Setting up carousel observer with container:', scrollContainer);
         if (!scrollContainer) return;
 
         this._intersectionObserver = new IntersectionObserver((entries) => {
-            // Get all headers and their intersection ratios
-            const headerStates = Array.from(document.querySelectorAll('.flex[data-carousel-id]'))
-                .map(header => ({
-                    id: header.dataset.carouselId,
-                    ratio: entries.find(e => e.target === header)?.intersectionRatio || 0,
-                    rect: header.getBoundingClientRect()
-                }))
-                .filter(state => state.rect.top <= 0) // Only consider headers that are at or above the top
-                .sort((a, b) => b.ratio - a.ratio); // Sort by most visible first
+            entries.forEach(entry => {
+                const carouselId = entry.target.getAttribute('data-carousel-id');
+                if (!carouselId) return;
 
-            // Find the most visible header that's scrolled up (ratio > 0.3)
-            const activeHeader = headerStates.find(state => state.ratio > 0.3);
-            
-            // Show markers for the most visible header
-            this._carousels.forEach((component, id) => {
-                if (activeHeader && id === activeHeader.id) {
-                    console.log(`Showing markers for: ${id} (ratio: ${activeHeader.ratio.toFixed(2)})`);
+                const component = this._carousels.get(carouselId);
+                if (!component) return;
+
+                const intersectionRatio = entry.intersectionRatio;
+                console.log(`Intersection for ${carouselId}:`, {
+                    ratio: intersectionRatio,
+                    isIntersecting: entry.isIntersecting,
+                    boundingRect: entry.boundingClientRect
+                });
+
+                if (intersectionRatio > 0.3) {
                     component._markerManager.showMarkers();
                 } else {
                     component._markerManager.hideMarkers();
@@ -190,11 +189,11 @@ export default class HomePage {
             });
         }, {
             root: scrollContainer,
-            threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1], // More granular thresholds
+            threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
             rootMargin: '0px'
         });
 
-        // Observe all carousel headers
+        // Observe the carousel headers
         const headers = document.querySelectorAll('.flex[data-carousel-id]');
         headers.forEach(header => {
             this._intersectionObserver.observe(header);

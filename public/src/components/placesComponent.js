@@ -121,7 +121,7 @@ export default class PlacesComponent {
 
         // Add collapse handler - only hide markers if explicitly collapsed
         this._carousel.onCollapse(() => {
-            console.log(`[${this._containerSelector}] Carousel collapsed`);
+            console.log(`[${this._containerSelector}] Carousel collapsed, hiding markers`);
             this._markerManager.hideMarkers();
             this._markersVisible = false;
             // Update dot opacity
@@ -130,6 +130,8 @@ export default class PlacesComponent {
             }
             // Force clear any lingering pulse states
             this._markerManager.setPulsing(false);
+            // Clear marker selection
+            this._markerManager.selectMarker(null);
         });
     }
 
@@ -311,8 +313,8 @@ export default class PlacesComponent {
                 this._markerManager.updateMarkers(processedPlaces, this._config.markerColors);
                 if (this._dotElement) {
                     this._dotElement.style.opacity = '1';
-                    // Don't automatically show markers - let intersection observer handle it
-                    this._markersVisible = true;
+                    // Don't automatically show markers
+                    this._markersVisible = false;
                 }
                 
                 // Only expand if this was from a header click
@@ -488,7 +490,7 @@ export default class PlacesComponent {
 
     _createPlaceCard(place) {
         const card = document.createElement('div');
-        card.className = 'place-card p-4 cursor-pointer hover:bg-gray-50';
+        card.className = 'place-card mb-4 cursor-pointer hover:bg-gray-50';
         card.dataset.placeId = place.place_id;
         
         // Add custom property for highlight color
