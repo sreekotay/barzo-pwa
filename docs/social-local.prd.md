@@ -8,40 +8,162 @@ This document outlines the requirements and structure for a **persona-based soci
 
 These are the core features and functionality of the platform as expresed in these tables and RLS policies.
 
-1. Users Table
+1. Users
+```sql
+-- Authentication handled by Supabase Auth (auth.users table)
+-- No separate users table needed
 ```
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    phone_number TEXT UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-```
-✅ Stores user accounts, authentication handled via Supabase Auth.
+✅ User authentication and core data handled by Supabase Auth
 
 2. Personas Table
-```
+```sql
 CREATE TABLE personas (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('business', 'group', 'alias')),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    type persona_type NOT NULL,
+    handle TEXT UNIQUE NOT NULL CHECK (handle ~ '^[a-zA-Z0-9_]{1,30}$'),
     avatar_url TEXT,
-    handle TEXT UNIQUE NOT NULL,
     metadata JSONB DEFAULT '{}'::JSONB,
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ```
-✅ Personas allow users to post as groups, businesses, or aliases.
+✅ Personas represent businesses, groups, or alternate identities
+✅ Core fields are normalized for efficient querying
+✅ All profile data stored in flexible metadata JSONB
+✅ GIN index on metadata enables efficient filtering
 
-3. Persona Relationships Table (Unified Relationship Model)
+#### **Profile Metadata Structure**
+
+The `metadata` JSONB field contains type-specific profile information:
+
+For type "user":
+```json
+{
+  "profile": {
+    "banner_image_url": "https://...",
+    "first_name": "John",
+    "last_name": "Doe",
+    "dob": "1990-01-01",
+    "nickname": "Johnny",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "bio": "Software developer...",
+    "gender": "male"
+  },
+  "privacy": {
+    "dob": "friends",
+    "email": "members",
+    "phone": "managers",
+    "last_name": "public"
+  }
+}
 ```
+
+For type "business":
+```json
+{
+  "profile": {
+    "banner_image_url": "https://...",
+    "business_name": "Acme Corp",
+    "description": "We make everything",
+    "website": "https://acme.com",
+    "contact": {
+      "email": "info@acme.com",
+      "phone": "+1234567890"
+    },
+    "hours": {
+      "mon": ["9:00", "17:00"],
+      "tue": ["9:00", "17:00"]
+    },
+    "location": {
+      "address": "123 Main St",
+      "lat": 37.7749,
+      "lng": -122.4194
+    }
+  }
+}
+```
+
+For type "group":
+```json
+{
+  "profile": {
+    "banner_image_url": "https://...",
+    "name": "SF Hikers",
+    "description": "Hiking group in SF",
+    "rules": ["Be nice", "Leave no trace"],
+    "join_requirements": "approval_needed",
+    "category": "outdoors"
+  }
+}
+```
+
+For type "band":
+```json
+{
+  "profile": {
+    "banner_image_url": "https://...",
+    "name": "The Rockers",
+    "genre": ["rock", "indie"],
+    "booking_email": "book@therockers.com",
+    "members": [
+      {"name": "John", "instrument": "guitar"},
+      {"name": "Jane", "instrument": "drums"}
+    ],
+    "upcoming_shows": [
+      {"date": "2024-04-01", "venue": "The Forum"}
+    ]
+  }
+}
+```
+
+For type "event":
+```json
+{
+  "profile": {
+    "banner_image_url": "https://...",
+    "name": "Summer Festival 2024",
+    "date": {
+      "start": "2024-07-01T15:00:00Z",
+      "end": "2024-07-03T23:00:00Z"
+    },
+    "venue": {
+      "name": "Central Park",
+      "address": "123 Park Ave",
+      "lat": 37.7749,
+      "lng": -122.4194
+    },
+    "tickets": {
+      "url": "https://tickets.com/...",
+      "price_range": ["$50", "$200"]
+    }
+  }
+}
+```
+
+Benefits:
+- **Type-Specific Fields**: Each persona type has relevant fields
+- **Flexible Schema**: Easy to add new fields per type
+- **Efficient Storage**: Only store needed fields
+- **Queryable**: GIN index enables searching metadata
+- **Versioning**: Can add schema version for migrations
+
+#### **Persona Types**
+
+Different persona types have different profile expectations:
+- **Business**: Emphasizes contact info, hours, location
+- **Group**: Focuses on purpose, membership rules
+- **Alias**: May omit or use pseudonymous information
+- **Band**: Highlights genre, bookings, members
+- **Event**: Dates, venue, ticketing info
+
+3. Persona Relationships Table
+```sql
 CREATE TABLE persona_relationships (
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     persona_id UUID REFERENCES personas(id) ON DELETE CASCADE,
-    type ENUM(
-        'follower', 'acquaintance', 'friend', 'member',
-        'moderator', 'manager', 'owner', 'muted', 'blocked'
-    ) NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
+    type relationship_type NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     PRIMARY KEY (user_id, persona_id)
 );
 ```
@@ -49,55 +171,44 @@ CREATE TABLE persona_relationships (
 ✅ Stores all relationships, including social connections, memberships, and moderation roles.
 ✅ blocked and muted override any other relationship.
 
-4. Effective Relationships Table (Precomputed for Fast Lookups)
-```
+4. Effective Relationships Table
+```sql
 CREATE TABLE effective_relationships (
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     target_id UUID NOT NULL,
-    target_type ENUM('user', 'persona') NOT NULL,
-    effective_type ENUM(
-        'public', 'follower', 'acquaintance', 'friend',
-        'member', 'moderator', 'manager', 'owner',
-        'muted', 'blocked'
-    ) NOT NULL,
+    target_type target_type NOT NULL,
+    effective_type relationship_type NOT NULL,
     PRIMARY KEY (user_id, target_id, target_type)
 );
 ```
 ✅ Precomputed for efficient RLS and permission lookups.
 
 5. Posts Table
-```
+```sql
 CREATE TABLE posts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    lat FLOAT NULL,
-    lng FLOAT NULL,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     content JSONB NOT NULL,
-    visibility_level ENUM(
-        'public', 'follower', 'acquaintance', 'friend',
-        'member', 'moderator', 'manager', 'owner'
-    ) NOT NULL DEFAULT 'public',
-    response_level ENUM(
-        'public', 'follower', 'acquaintance', 'friend',
-        'member', 'moderator', 'manager', 'owner'
-    ) NOT NULL DEFAULT 'public',
+    visibility_level relationship_type NOT NULL,
+    response_level relationship_type NOT NULL,
     persona_id UUID REFERENCES personas(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     parent_id UUID REFERENCES posts(id) ON DELETE CASCADE,
-    views INT DEFAULT 0,
-    deleted_at TIMESTAMP NULL,
+    lat FLOAT,
+    lng FLOAT,
+    views INTEGER DEFAULT 0,
     tags JSONB DEFAULT '[]'::JSONB,
-    created_at TIMESTAMP DEFAULT NOW()
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-CREATE INDEX idx_post_tags ON posts USING GIN (tags);
 ```
 ✅ Tags are stored as a JSONB array of tag GUIDs for optimized filtering.
 ✅ Uses visibility_level and response_level to control access.
 
 6. Post Read & Delivery Tracking
-```
+```sql
 CREATE TABLE post_read_delivery (
     post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     delivered_at TIMESTAMP DEFAULT NOW(),
     read_at TIMESTAMP NULL,
     PRIMARY KEY (post_id, user_id)
@@ -106,7 +217,7 @@ CREATE TABLE post_read_delivery (
 ✅ For non-public posts, tracks when a post is delivered and read.
 
 7. Notifications Table
-```
+```sql
 CREATE TABLE notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     recipient_id UUID NOT NULL,
@@ -124,7 +235,7 @@ CREATE TABLE notifications (
 ✅ handled_at is used for moderators acting on persona mentions.
 
 8. Tags Table
-```
+```sql
 CREATE TABLE tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT UNIQUE NOT NULL
@@ -133,10 +244,10 @@ CREATE TABLE tags (
 ✅ Stores tags with GUIDs to prevent inconsistencies.
 
 9. Post Engagements Table (Reactions, Topics, etc.)
-```
+```sql
 CREATE TABLE post_engagement (
     post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     type ENUM('tag', 'topic', 'reaction') NOT NULL,
     value TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -146,10 +257,10 @@ CREATE TABLE post_engagement (
 ✅ Stores reactions, topics, and tags in one optimized table.
 
 10. Mentions Table
-```
+```sql
 CREATE TABLE mentions (
     post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
-    mentioned_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    mentioned_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT NOW(),
     PRIMARY KEY (post_id, mentioned_id)
 );
@@ -157,31 +268,16 @@ CREATE TABLE mentions (
 ✅ Stores mentions for efficient notifications and lookups.
 
 11. User Blocks Table
-```
+```sql
 CREATE TABLE user_blocks (
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    blocked_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    blocked_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     reason TEXT,
     blocked_at TIMESTAMP DEFAULT NOW(),
     PRIMARY KEY (user_id, blocked_user_id)
 );
 ```
 ✅ For system-wide user blocks outside of personas.
-
-12. Persona Profiles Table
-```
-CREATE TABLE persona_profiles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    persona_id UUID REFERENCES personas(id) ON DELETE CASCADE,
-    owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('business', 'group', 'alias')),
-    avatar_url TEXT,
-    handle TEXT UNIQUE NOT NULL,
-    metadata JSONB DEFAULT '{}'::JSONB,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-```
-✅ Stores additional metadata and profile information for personas.
 
 * * * * *
 
@@ -193,10 +289,51 @@ CREATE TABLE persona_profiles (
 -   Users can interact as **personas**, which represent **businesses, groups, or alternate identities**.
 -   **Personas replace traditional groups and DMs**, making all interactions **persona-based**.
 -   **A unified relationship model governs visibility and permissions.**
-#### **Relationship Types (One-Way, Directional, Precomputed Effective Relationship)**
--   **Social Connections:** `follower`, `acquaintance`, `friend`, `mute`, `block`
--   **Membership Roles (for Personas):** `member`, `moderator`, `manager`, `owner`
--   **Mute and block are instant downgrades**, overriding all other access.
+
+#### **Relationship Types (Hierarchical Access Control)**
+
+Relationships are ordered by increasing access level:
+```sql
+CREATE TYPE relationship_type AS ENUM (
+  'blocked',   -- 0: No access
+  'muted',     -- 1: Hidden but not blocked
+  'follower',  -- 2: Basic access
+  'acquaintance', -- 3: Closer than follower
+  'friend',    -- 4: Trusted connection
+  'member',    -- 5: Group membership
+  'moderator', -- 6: Can moderate
+  'manager',   -- 7: Can manage
+  'owner'      -- 8: Full control
+);
+```
+
+The order is significant and used for efficient permission checks:
+```sql
+-- Helper function to compare relationship levels
+CREATE OR REPLACE FUNCTION relationship_type_ordinal(rel relationship_type) 
+RETURNS int AS $$
+BEGIN
+  RETURN array_position(
+    ARRAY['blocked', 'muted', 'follower', 'acquaintance', 'friend', 
+          'member', 'moderator', 'manager', 'owner']::relationship_type[],
+    rel
+  );
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+```
+
+This enables efficient numeric comparisons for access control:
+- If a post requires 'friend' level (4) to view
+- And a user has 'moderator' level (6)
+- Then `relationship_type_ordinal('moderator') >= relationship_type_ordinal('friend')` is true
+- Therefore, the moderator can view the post
+
+Key features:
+- **Hierarchical Access**: Higher levels include all lower level permissions
+- **Efficient Checks**: Uses numeric comparisons instead of string operations
+- **Clear Progression**: From no access (blocked) to full control (owner)
+- **Flexible Visibility**: Content can require any relationship level for access
+- **Consistent Rules**: Same hierarchy applies to both users and personas
 
 * * * * *
 
@@ -333,24 +470,3 @@ socialService.subscribeToNotifications((payload) => {
 #### **Schema Update for Optimized Tags**
 
 ```
-ALTER TABLE posts ADD COLUMN tags JSONB DEFAULT '[]'::JSONB;
-CREATE INDEX idx_post_tags ON posts USING GIN (tags);
-```
-
-🚀 **Filtering posts by tag is now fast and efficient**:
-
-```
-SELECT * FROM posts WHERE tags @> '["550e8400-e29b-41d4-a716-446655440000"]';
-```
-
-💚 **Avoids joins while keeping tagging flexible.**
-
-* * * * *
-
-### **2.5 Notifications System**
-
--   **Supabase Realtime notifications** for now (**later transition to Pusher**).
--   **Cascades persona-related notifications** to `moderators`, `managers`, and `owners`.
--   **Tracks delivered, read, and handled statuses**.
-
-... (TODO rate-limiting, spam prevention, API considerations, and future roadmap)

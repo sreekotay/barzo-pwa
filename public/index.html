@@ -2,12 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, user-scalable=no">
     <title>Barzo</title>
     <meta name="theme-color" content="#f51324">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" type="image/png" href="/icon-192.png">
+    <link href="https://fonts.googleapis.com/css?family=Libre+Barcode+128|VT323" rel="stylesheet">
+    <link href="https://fonts.cdnfonts.com/css/quirky-sans" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
     <script>
         tailwind.config = {
             theme: {
@@ -22,425 +29,143 @@
             }
         }
     </script>
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-</head>
-<body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4">
-    <div class="max-w-md w-full space-y-8 text-center">
-        <!-- Logo/Icon -->
-        <div class="mx-auto w-24 h-24 bg-red-500 rounded-xl shadow-lg flex items-center justify-center">
-            <img src="/icon-192.png" alt="Barzo" class="w-16 h-16">
-        </div>
+    <style>
+        @import url('https://fonts.cdnfonts.com/css/bagnard-sans');
 
-        <!-- Title -->
-        <h1 class="text-3xl font-bold text-gray-900">Welcome to Barzo.<br>
-            <span style="font-size: 16px">Be social. Drink Free.</span></h1>
+        body {
+            font-family: 'Bagnard Sans', sans-serif;
+        }
 
-        <!-- Initial Explanation -->
-        <div id="permission-explanation" class="bg-white rounded-lg shadow p-6 text-left space-y-4">
-            <p class="text-gray-700">To provide the best experience, Barzo needs:</p>
-            <ul class="space-y-2 text-gray-600 pl-4">
-                <li class="flex items-start">
-                    <span class="inline-block w-2 h-2 bg-red-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
-                    <span>
-                        <strong>Location access</strong> - to show you relevant content nearby
-                    </span>
-                </li>
-                <li class="flex items-start">
-                    <span class="inline-block w-2 h-2 bg-red-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
-                    <span>
-                        <strong>Notifications</strong><br>We keep you updated about messages and events
-                    </span>
-                </li>
-            </ul>
-            <button id="start-permission-flow" class="w-full mt-4 py-3 px-4 bg-red-500 text-white rounded-lg font-medium shadow-lg hover:bg-red-600 transition-colors">
-                Get Started
-            </button>
-        </div>
+        body {
+            font-family: 'Quirky Sans', sans-serif;
+            font-weight: 300;
+            font-style: normal;
+        }
+
+        /* Hamburger Menu Animations */
+        .hamburger-line {
+            transition: all 0.3s ease-in-out;
+        }
         
-        <!-- Permissions Status (initially hidden) -->
-        <div id="permission-status" class="space-y-4 bg-white rounded-lg shadow p-6 hidden">
-            <div class="flex items-center justify-between">
-                <span class="text-gray-700">Location Access</span>
-                <span id="location-status" class="text-gray-500">⏳ Waiting...</span>
-            </div>
-            <div class="flex items-center justify-between">
-                <span class="text-gray-700">Notifications</span>
-                <span id="notification-status" class="text-gray-500">⏳ Waiting...</span>
-            </div>
-            <div class="flex items-center justify-between">
-                <span class="text-gray-700">Installation</span>
-                <span id="install-status" class="text-gray-500">⏳ Waiting...</span>
-            </div>
-        </div>
+        .hamburger.open .hamburger-line:nth-child(1) {
+            transform: translateY(8px) rotate(45deg);
+        }
+        
+        .hamburger.open .hamburger-line:nth-child(2) {
+            opacity: 0;
+        }
+        
+        .hamburger.open .hamburger-line:nth-child(3) {
+            transform: translateY(-8px) rotate(-45deg);
+        }
 
-        <!-- Action Button -->
-        <button id="action-button" class="w-full py-3 px-4 bg-red-500 text-white rounded-lg font-medium shadow-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed hidden">
-            Continue to App
-        </button>
+        #mobile-sidebar {
+            transition: transform 0.3s ease-in-out;
+        }
+    </style>
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/src/styles/receipt.css">
+</head>
+<body class="bg-gray-50 min-h-screen max-h-screen flex flex-col">
+    
+    <div style="position: relative; padding-top: 48px; background:#444">
+        <div id="map"></div>
+        <div id="map-resize-handle"></div>
     </div>
 
-    <div id="map" style="width: 100%; height: 400px;"></div>
-    <div id="search-container"></div>
+    <!-- Overlay for mobile menu -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40 hidden"></div>
 
-    <script>
-        let deferredPrompt = null;
-        const permissionExplanation = document.getElementById('permission-explanation');
-        const permissionStatus = document.getElementById('permission-status');
-        const startPermissionFlow = document.getElementById('start-permission-flow');
-        const locationStatus = document.getElementById('location-status');
-        const notificationStatus = document.getElementById('notification-status');
-        const installStatus = document.getElementById('install-status');
-        const actionButton = document.getElementById('action-button');
+    <!--- main app container-->
+    <div id="main-app" class="flex flex-grow" style="position: relative; overflow-y: auto;"> 
+        <!-- Desktop Sidebar - hidden on mobile -->
+        <div class="hidden lg:block w-64 bg-white shadow-lg">
+            <div class="p-4">
+                <div class="text-2xl font-bold text-red-500 mb-8">
+                    <a href="#" class="hover:text-red-600">Barzo</a>
+                </div>
+                <nav>
+                    <ul class="space-y-4">
+                        <li><a href="#home" class="block text-gray-600 hover:text-red-500">Home</a></li>
+                        <li><a href="#profile##" class="block text-gray-600 hover:text-red-500">Profile</a></li>
+                        <li><a href="#settings" class="block text-gray-600 hover:text-red-500">Settings</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
 
-        // Check if already installed
-        if (window.matchMedia('(display-mode: standalone)').matches) {
-            window.location.href = '/barzo.html';
-        }
+        <!-- Mobile header - hidden on desktop -->
+        <header class="lg:hidden fixed top-0 left-0 right-0 bg-red-500 z-50">
+            <div class="px-4 py-3 flex items-left gap-4">
+                <button id="hamburger-menu" class="hamburger flex flex-col justify-center items-center w-6 h-6">
+                    <span class="hamburger-line w-6 h-0.5 bg-white mb-1.5"></span>
+                    <span class="hamburger-line w-6 h-0.5 bg-white mb-1.5"></span>
+                    <span class="hamburger-line w-6 h-0.5 bg-white"></span>
+                </button>
+                <a href="#" class="text-l font-bold text-white hover:text-gray-100">BARZO</a>
+                <div class="w-6"></div> <!-- Spacer for symmetry -->
+            </div>
+        </header>
+        
 
-        // Add this helper function at the top of the script
-        function isIOS() {
-            return [
-                'iPad Simulator',
-                'iPhone Simulator',
-                'iPod Simulator',
-                'iPad',
-                'iPhone',
-                'iPod'
-            ].includes(navigator.platform)
-            // iPad on iOS 13 detection
-            || (navigator.userAgent.includes("Mac") && "ontouchend" in document);
-        }
+        <!-- Main Content Area - shared between mobile and desktop -->
+        <div class="flex-1 flex flex-col" style="max-width: 100vw;">
+            <div id="search-container">
+                <div class="search-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <button id="center-button" 
+                    class="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-gray-600" 
+                    onclick="window.centerOnUserLocation()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="8"></circle>
+                        <line x1="12" y1="2" x2="12" y2="4"></line>
+                        <line x1="12" y1="20" x2="12" y2="22"></line>
+                        <line x1="2" y1="12" x2="4" y2="12"></line>
+                        <line x1="20" y1="12" x2="22" y2="12"></line>
+                        <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                </button>
+            </div>
 
-        // Update the checkExistingPermissions function
-        async function checkExistingPermissions() {
-            let needsPermissions = false;
+            <!-- Single Main Content Area -->
+            <main class="flex-grow container mx-auto" style=background:#eee>
+                <div id="main-content">
+                    <!-- Content will be inserted here by router -->
+                </div>
+            </main>
 
-            // Check location
-            const locationResult = await navigator.permissions.query({ name: 'geolocation' });
-            if (locationResult.state !== 'granted') {
-                needsPermissions = true;
-            }
+            <!-- Footer -->
+            <footer class="w-full bg-white border-t">
+                <div class="max-w-7xl mx-auto px-4 py-6">
+                    <div class="text-center text-gray-600">
+                        <p>&copy; 2024 Barzo. All rights reserved.</p>
+                    </div>
+                </div>
+            </footer>
 
-            // Check notifications only if not on iOS
-            if (!isIOS()) {
-                if ('Notification' in window && Notification.permission !== 'granted') {
-                    needsPermissions = true;
-                }
-            }
+            
+        </div>
+    </div>
 
-            if (!needsPermissions) {
-                permissionExplanation.classList.add('hidden');
-                permissionStatus.classList.remove('hidden');
-                locationStatus.innerHTML = '✅ Granted';
-                // Only show notification status if not on iOS
-                if (!isIOS()) {
-                    notificationStatus.innerHTML = '✅ Granted';
-                } else {
-                    notificationStatus.parentElement.style.display = 'none';
-                }
-                checkAllPermissions();
-            }
-        }
+    <!-- Mobile Sidebar -->
+    <div id="mobile-sidebar" class="lg:hidden fixed top-0 right-0 h-full w-64 bg-white transform translate-x-full transition-transform z-50">
+        <div class="p-6">
+            <nav>
+                <ul class="space-y-4">
+                    <li><a href="#home" class="block text-gray-600 hover:text-red-500">Home</a></li>
+                    <li><a href="#profile##" class="block text-gray-600 hover:text-red-500">Profile</a></li>
+                    <li><a href="#settings" class="block text-gray-600 hover:text-red-500">Settings</a></li>
+                </ul>
+            </nav>
+        </div>
+    </div>
 
-        function updateInstallStatus() {
-            if (isIOS()) {
-                installStatus.innerHTML = '📱 Add to Home Screen';
-                // Add iOS-specific instructions
-                const helpText = document.createElement('div');
-                helpText.id = 'ios-install-help';
-                helpText.className = 'mt-2 text-xs text-gray-600 text-left';
-                helpText.innerHTML = `
-                    To install on iOS:
-                    <ol class="list-decimal list-inside mt-1 space-y-1">
-                        <li>Tap the share button <span class="inline-block w-5 h-5 align-middle">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                <path d="M13 3v1.27a.75.75 0 001.5 0V3h2.25A2.25 2.25 0 0119 5.25v2.628a.75.75 0 01-1.5 0V5.25a.75.75 0 00-.75-.75H3.75a.75.75 0 00-.75.75v11.5c0 .414.336.75.75.75h11.5a.75.75 0 00.75-.75v-2.628a.75.75 0 011.5 0V18A2.25 2.25 0 0115.75 20H3.75A2.25 2.25 0 011 17.75V5.25A2.25 2.25 0 013.75 3H13zm4.994 7.497a.75.75 0 00-1.488-.15l-.001.018a.75.75 0 001.489.13zm-1.247 1.247a.75.75 0 00.001-.001l-.001.001zm.374-1.374a.75.75 0 00.001-.001l-.001.001zM6 6h.008v.008H6V6z" />
-                            </svg>
-                        </span></li>
-                        <li>Scroll and tap "Add to Home Screen"</li>
-                        <li>Tap "Add" in the top right</li>
-                    </ol>
-                `;
-                installStatus.parentElement.appendChild(helpText);
-            } else if (deferredPrompt) {
-                // Mobile-style install available
-                installStatus.innerHTML = '🔄 Ready to install';
-            } else if (!window.matchMedia('(display-mode: standalone)').matches) {
-                // Show desktop install hint
-                installStatus.innerHTML = '💡 Look for install icon in browser address bar';
-            }
-        }
-
-        // Handle install prompt
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            updateInstallStatus();
-            checkAllPermissions();
-        });
-
-        startPermissionFlow.addEventListener('click', () => {
-            permissionExplanation.classList.add('hidden');
-            permissionStatus.classList.remove('hidden');
-            init();
-        });
-
-        async function requestLocationPermission() {
-            try {
-                const result = await navigator.permissions.query({ name: 'geolocation' });
-                if (result.state === 'granted') {
-                    locationStatus.innerHTML = '✅ Granted';
-                    return true;
-                } else if (result.state === 'prompt') {
-                    // Request permission with low accuracy options
-                    try {
-                        await new Promise((resolve, reject) => {
-                            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                                enableHighAccuracy: false,
-                                timeout: 5000,
-                                maximumAge: 300000 // 5 minutes
-                            });
-                        });
-                        locationStatus.innerHTML = '✅ Granted';
-                        return true;
-                    } catch (geoError) {
-                        if (geoError.code === 1) { // PERMISSION_DENIED
-                            locationStatus.innerHTML = '❌ Permission denied';
-                        } else if (geoError.code === 3) { // TIMEOUT
-                            locationStatus.innerHTML = '❌ Request timed out';
-                        } else {
-                            locationStatus.innerHTML = '❌ Error getting location';
-                        }
-                        return false;
-                    }
-                } else {
-                    locationStatus.innerHTML = '❌ Permission denied';
-                    return false;
-                }
-            } catch (error) {
-                console.error('Error requesting location permission:', error);
-                locationStatus.innerHTML = '❌ System error';
-                return false;
-            }
-        }
-
-        // Add these helper functions at the top
-        function getStoredSubscription() {
-            try {
-                const stored = localStorage.getItem('push-subscription');
-                if (!stored) return null;
-                
-                const { subscription, timestamp } = JSON.parse(stored);
-                const age = Date.now() - timestamp;
-                
-                // Check if older than 6 months
-                if (age > 180 * 24 * 60 * 60 * 1000) {
-                    localStorage.removeItem('push-subscription');
-                    return null;
-                }
-                
-                return subscription;
-            } catch (error) {
-                console.error('Error reading stored subscription:', error);
-                return null;
-            }
-        }
-
-        function storeSubscription(subscription) {
-            try {
-                localStorage.setItem('push-subscription', JSON.stringify({
-                    subscription,
-                    timestamp: Date.now()
-                }));
-            } catch (error) {
-                console.error('Error storing subscription:', error);
-            }
-        }
-
-        // Update the subscribeToPush function
-        async function subscribeToPush() {
-            try {
-                const registration = await navigator.serviceWorker.ready;
-                
-                // Check for existing subscription in localStorage
-                const storedSubscription = getStoredSubscription();
-                if (storedSubscription) {
-                    try {
-                        // Verify the stored subscription is still valid
-                        const pushSubscription = await registration.pushManager.getSubscription();
-                        if (pushSubscription?.endpoint === storedSubscription.endpoint) {
-                            console.log('Using existing push subscription');
-                            return true;
-                        }
-                    } catch (error) {
-                        console.log('Stored subscription invalid, creating new one');
-                    }
-                }
-                
-                // Get VAPID public key from server
-                const response = await fetch('/api/vapidPublicKey');
-                const { publicKey } = await response.json();
-
-                // Convert VAPID key to Uint8Array
-                const convertedVapidKey = urlBase64ToUint8Array(publicKey);
-
-                // Subscribe to push notifications
-                const subscription = await registration.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: convertedVapidKey
-                });
-
-                // Send subscription to server
-                await fetch('/api/subscribe', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(subscription)
-                });
-
-                // Store the new subscription
-                storeSubscription(subscription);
-
-                console.log('Push notification subscription successful');
-                return true;
-            } catch (err) {
-                console.error('Error subscribing to push notifications:', err);
-                return false;
-            }
-        }
-
-        // Helper function to convert VAPID key
-        function urlBase64ToUint8Array(base64String) {
-            const padding = '='.repeat((4 - base64String.length % 4) % 4);
-            const base64 = (base64String + padding)
-                .replace(/\-/g, '+')
-                .replace(/_/g, '/');
-
-            const rawData = window.atob(base64);
-            const outputArray = new Uint8Array(rawData.length);
-
-            for (let i = 0; i < rawData.length; ++i) {
-                outputArray[i] = rawData.charCodeAt(i);
-            }
-            return outputArray;
-        }
-
-        // Update the requestNotificationPermission function
-        async function requestNotificationPermission() {
-            try {
-                if (!('Notification' in window)) {
-                    notificationStatus.innerHTML = '❌ Not supported';
-                    return false;
-                }
-
-                const permission = await Notification.requestPermission();
-                
-                if (permission === 'granted') {
-                    notificationStatus.innerHTML = '✅ Granted';
-                    // Subscribe to push notifications
-                    const pushSubscribed = await subscribeToPush();
-                    return pushSubscribed;
-                } else {
-                    // Clear any stored subscription if permission is denied
-                    localStorage.removeItem('push-subscription');
-                    notificationStatus.innerHTML = '❌ Permission denied';
-                    return false;
-                }
-            } catch (error) {
-                console.error('Error requesting notification permission:', error);
-                notificationStatus.innerHTML = '❌ System error';
-                return false;
-            }
-        }
-
-        function checkAllPermissions() {
-            const hasLocation = locationStatus.innerHTML.includes('✅');
-            const hasNotifications = !isIOS() ? notificationStatus.innerHTML.includes('✅') : true;
-            const hasDenied = locationStatus.innerHTML.includes('denied') || 
-                              (!isIOS() && notificationStatus.innerHTML.includes('denied'));
-
-            // Only show action button if we're past the initial explanation
-            if (permissionExplanation.classList.contains('hidden')) {
-                actionButton.classList.remove('hidden');
-
-                // Remove any existing help text
-                const existingHelp = document.getElementById('permission-help');
-                if (existingHelp) existingHelp.remove();
-
-                // If we have any errors or blocked permissions
-                if (locationStatus.innerHTML.includes('❌') || (!isIOS() && notificationStatus.innerHTML.includes('❌'))) {
-                    if (hasDenied) {
-                        actionButton.textContent = 'Fix permissions and refresh';
-                        // Add help text for denied permissions
-                        const helpText = document.createElement('div');
-                        helpText.id = 'permission-help';
-                        helpText.className = 'mt-4 text-sm text-gray-600';
-                        helpText.innerHTML = `
-                            To fix permissions:
-                            <ol class="list-decimal list-inside mt-2 space-y-1">
-                                <li>Click the lock/info icon in your browser's address bar</li>
-                                <li>Find the denied permissions</li>
-                                <li>Change them to "Allow"</li>
-                                <li>Click the button above to refresh</li>
-                            </ol>
-                        `;
-                        actionButton.parentNode.insertBefore(helpText, actionButton.nextSibling);
-                    } else {
-                        actionButton.textContent = 'Try again';
-                    }
-                    
-                    actionButton.addEventListener('click', () => {
-                        window.location.reload();
-                    });
-                    return;
-                }
-
-                // Otherwise, show install/continue button
-                actionButton.textContent = isIOS() ? 'Add to Home Screen' : 'Continue to App';
-                
-                if (isIOS()) {
-                    actionButton.addEventListener('click', () => {
-                        document.getElementById('ios-install-help')?.scrollIntoView({ behavior: 'smooth' });
-                    });
-                }
-                if (deferredPrompt) {
-                    actionButton.addEventListener('click', async () => {
-                        await deferredPrompt.prompt();
-                        const result = await deferredPrompt.userChoice;
-                        if (result.outcome === 'accepted') {
-                            installStatus.innerHTML = '✅ Installed';
-                            window.location.href = '/barzo.html';
-                        } else {
-                            installStatus.innerHTML = '❌ Declined';
-                        }
-                        deferredPrompt = null;
-                    });
-                }
-            }
-        }
-
-        // Update the init function
-        async function init() {
-            // Request location first
-            const hasLocation = requestLocationPermission().then(checkAllPermissions);
-            if (!hasLocation) return;
-
-            // Request notification permission only if not on iOS
-            if (!isIOS()) {
-                setTimeout(() => {
-                    requestNotificationPermission().then(checkAllPermissions);
-                }, 1000);
-            } else {
-                // Hide notification status row on iOS
-                notificationStatus.parentElement.style.display = 'none';
-            }
-        }
-
-        // Start by checking existing permissions
-        checkExistingPermissions();
-
-        // Call on initial load too
-        updateInstallStatus();
+    <script type="module">
+        import { initialize } from '/app.js';
+        document.addEventListener('DOMContentLoaded', initialize);
     </script>
 </body>
+</html>
