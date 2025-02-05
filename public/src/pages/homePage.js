@@ -5,30 +5,31 @@ export default class HomePage {
     constructor(mapService) {
         this.mapService = mapService;
         this._carousels = new Map(); // Track all carousels
+        this._intersectionObserver = null;
     }
 
     async render() {
         return `
             <div class="pt-4">
-                <div class="flex px-4 mb-1 items-center">
+                <div class="flex px-4 mb-1 items-center" data-carousel-id="bars">
                     <h3 class="text-sm font-medium text-gray-500">BARS & CLUBS</h3>
                     <div class="w-2 h-2 rounded-full bg-red-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="bar"></div>
                 </div>
                 <div id="bar-container"></div>
 
-                <div class="flex px-4 mb-1 items-center">
+                <div class="flex px-4 mb-1 items-center" data-carousel-id="restaurants">
                     <h3 class="text-sm font-medium text-gray-500">RESTAURANTS</h3>
                     <div class="w-2 h-2 rounded-full bg-amber-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="restaurant"></div>
                 </div>
                 <div id="restaurant-container"></div>
 
-                <div class="flex px-4 mb-1 items-center">
+                <div class="flex px-4 mb-1 items-center" data-carousel-id="cigar">
                     <h3 class="text-sm font-medium text-gray-500">CIGAR & HOOKAH</h3>
                     <div class="w-2 h-2 rounded-full bg-purple-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="cigar"></div>
                 </div>
                 <div id="cigar-hookah-container"></div>
 
-                <div class="flex px-4 mb-1 items-center">
+                <div class="flex px-4 mb-1 items-center" data-carousel-id="music">
                     <h3 class="text-sm font-medium text-gray-500">KARAOKE & LIVE MUSIC</h3>
                     <div class="w-2 h-2 rounded-full bg-green-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="music"></div>
                 </div>
@@ -122,66 +123,89 @@ export default class HomePage {
         window.cigarHookahComponent = cigarHookahComponent;
         window.musicComponent = musicComponent;
 
-        // Wait for map to be ready before expanding bars carousel
+        // Wait for map to be ready before expanding all carousels
         if (this.mapService.isMapReady()) {
-            this._expandBarsCarousel();
+            this._expandAllCarousels();
         } else {
             this.mapService.onMapReady(() => {
-                this._expandBarsCarousel();
+                this._expandAllCarousels();
             });
         }
+
+        // Set up intersection observer for carousel headers
+        this._setupCarouselObserver();
     }
 
-    _expandBarsCarousel() {
+    _expandAllCarousels() {
         setTimeout(() => {
             const location = locationService.getUserLocationCached();
             if (location) {
-                const barsComponent = this._carousels.get('bars');
-                if (barsComponent) {
-                    // Pass true to indicate this is initial load
-                    barsComponent._handleHeaderClick(true);
-                }
+                // Expand all carousels
+                this._carousels.forEach((component, id) => {
+                    console.log(`Initial expansion of carousel: ${id}`);
+                    component._handleHeaderClick(true);
+                });
             }
         }, 100);
     }
 
     _handleCarouselExpand(activeId) {
         console.log('Handling carousel expand:', activeId);
-        // Just collapse other carousels - markers will be handled by collapse callback
-        this._carousels.forEach((component, id) => {
-            if (id !== activeId) {
-                console.log('Collapsing carousel:', id);
-                component._carousel.collapse();
-            }
+        // Don't collapse other carousels anymore
+        // Just ensure markers are shown only for the topmost visible one
+        this._intersectionObserver.takeRecords().forEach(entry => entry.target);
+    }
+
+    _setupCarouselObserver() {
+        if (this._intersectionObserver) {
+            this._intersectionObserver.disconnect();
+        }
+
+        const scrollContainer = document.querySelector('div#main-content');
+        console.log('Using scroll container:', scrollContainer);
+        if (!scrollContainer) return;
+
+        this._intersectionObserver = new IntersectionObserver((entries) => {
+            // Get all headers and their intersection ratios
+            const headerStates = Array.from(document.querySelectorAll('.flex[data-carousel-id]'))
+                .map(header => ({
+                    id: header.dataset.carouselId,
+                    ratio: entries.find(e => e.target === header)?.intersectionRatio || 0,
+                    rect: header.getBoundingClientRect()
+                }))
+                .filter(state => state.rect.top <= 0) // Only consider headers that are at or above the top
+                .sort((a, b) => b.ratio - a.ratio); // Sort by most visible first
+
+            // Find the most visible header that's scrolled up (ratio > 0.3)
+            const activeHeader = headerStates.find(state => state.ratio > 0.3);
+            
+            // Show markers for the most visible header
+            this._carousels.forEach((component, id) => {
+                if (activeHeader && id === activeHeader.id) {
+                    console.log(`Showing markers for: ${id} (ratio: ${activeHeader.ratio.toFixed(2)})`);
+                    component._markerManager.showMarkers();
+                } else {
+                    component._markerManager.hideMarkers();
+                }
+            });
+        }, {
+            root: scrollContainer,
+            threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1], // More granular thresholds
+            rootMargin: '0px'
+        });
+
+        // Observe all carousel headers
+        const headers = document.querySelectorAll('.flex[data-carousel-id]');
+        headers.forEach(header => {
+            this._intersectionObserver.observe(header);
         });
     }
 
-    _setupPlacesComponents() {
-        // ... existing setup code ...
-
-        // When one expands, collapse others
-        const handleExpand = (expandedComponent) => {
-            this._placesComponents.forEach(component => {
-                if (component !== expandedComponent) {
-                    component.handleExternalCollapse();
-                }
-            });
-        };
-
-        // Create components with onExpand handler
-        this._placesComponents = [
-            new PlacesComponent('#restaurants-carousel', this._locationService, this._mapService, {
-                type: 'restaurant',
-                onExpand: () => handleExpand(this._placesComponents[0])
-            }),
-            new PlacesComponent('#bars-carousel', this._locationService, this._mapService, {
-                type: 'bar',
-                onExpand: () => handleExpand(this._placesComponents[1])
-            }),
-            new PlacesComponent('#cafes-carousel', this._locationService, this._mapService, {
-                type: 'cafe',
-                onExpand: () => handleExpand(this._placesComponents[2])
-            })
-        ];
+    // Clean up when page changes
+    destroy() {
+        if (this._intersectionObserver) {
+            this._intersectionObserver.disconnect();
+            this._intersectionObserver = null;
+        }
     }
 } 

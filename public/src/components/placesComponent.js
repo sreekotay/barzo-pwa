@@ -119,9 +119,9 @@ export default class PlacesComponent {
         // Add header click handler setup
         this._setupHeaderClickHandler();
 
-        // Add collapse handler
+        // Add collapse handler - only hide markers if explicitly collapsed
         this._carousel.onCollapse(() => {
-            console.log(`[${this._containerSelector}] Carousel collapsed, hiding markers`);
+            console.log(`[${this._containerSelector}] Carousel collapsed`);
             this._markerManager.hideMarkers();
             this._markersVisible = false;
             // Update dot opacity
@@ -130,7 +130,6 @@ export default class PlacesComponent {
             }
             // Force clear any lingering pulse states
             this._markerManager.setPulsing(false);
-            this._markerManager.clear();
         });
     }
 
@@ -194,15 +193,15 @@ export default class PlacesComponent {
             const location = this._locationService.getMapLocation();
             if (location) {
                 console.log(`[${this._containerSelector}] Fetching places before expansion`);
-                // Notify parent about expansion first
+                // Notify parent about expansion
                 if (this._config.onExpand) {
                     this._config.onExpand();
                 }
-                // Fetch places - map fitting will happen after fetch
+                // Fetch places and expand
                 this._fetchNearbyPlaces(location, true);
             }
         } else {
-            // If expanded, just collapse - markers will be handled by collapse callback
+            // If expanded, just collapse this carousel
             console.log(`[${this._containerSelector}] Collapsing carousel`);
             this._carousel.collapse();
         }
@@ -308,25 +307,17 @@ export default class PlacesComponent {
                 const mapLocation = this._locationService.getMapLocation();
                 const processedPlaces = this._processPlacesData(places, mapLocation);
                 
-                // Update markers and show dot
+                // Update markers but don't automatically show them
                 this._markerManager.updateMarkers(processedPlaces, this._config.markerColors);
                 if (this._dotElement) {
                     this._dotElement.style.opacity = '1';
-                    this._markerManager.showMarkers();
+                    // Don't automatically show markers - let intersection observer handle it
                     this._markersVisible = true;
                 }
                 
-                // Only expand and fit to markers if this was from a header click
+                // Only expand if this was from a header click
                 if (fromHeaderClick) {
                     this._carousel.expand();
-                    // Only fit to markers if fitMapOnExpand is true
-                    if (this._config.fitMapOnExpand && processedPlaces.length > 0) {
-                        const bounds = this._markerManager.getMarkerBounds();
-                        if (bounds) {
-                            this._mapService.fitToBounds(bounds);
-                        }
-                        this._markerManager.setPulsing(true);
-                    }
                 }
                 
                 // Only update content if we're expanded or this was a header click

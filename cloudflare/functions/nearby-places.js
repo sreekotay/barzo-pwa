@@ -463,7 +463,7 @@ function getNearbySearchCacheKey(lat, lng, radius, type, provider, keywords = []
     const roundedLat = (Math.round(lat / coordGridSize) * coordGridSize).toFixed(5);
     const roundedLng = (Math.round(lng / coordGridSize) * coordGridSize).toFixed(5);
     
-    // Round radius logarithmically
+    // Round radius logarithmically (using ceil)
     const roundedRadius = Math.ceil(radius / getRadiusGridSize(radius)) * getRadiusGridSize(radius);
 
     // Generate cache key - keep provider for flexibility
