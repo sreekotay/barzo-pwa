@@ -66,14 +66,14 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400',  // 24 hours
 };
 
-// Grid configuration for coordinate rounding to improve cache hits
-const GRID_SIZE_METERS = 100; // Size of grid for rounding coordinates
+// Grid configuration
+const GRID_SIZE_METERS = 100; // Base grid size
 const GRID = {
-  SIZE_METERS: GRID_SIZE_METERS,  // Size of grid for rounding coordinates
-  LAT_PRECISION: 5,               // Decimal places for latitude
-  LNG_PRECISION: 5,               // Decimal places for longitude
-  MIN_RADIUS: GRID_SIZE_METERS,   // Minimum search radius
-  RADIUS_STEP: GRID_SIZE_METERS   // Round radius to nearest step for cache consistency
+    SIZE_METERS: GRID_SIZE_METERS,
+    LAT_PRECISION: 5,               // 5 decimal places ≈ 1.1m precision
+    LNG_PRECISION: 5,
+    MIN_RADIUS: GRID_SIZE_METERS,   // Minimum 100m radius
+    RADIUS_STEP: GRID_SIZE_METERS   // Round radius to nearest 100m
 };
 
 // Available data providers
@@ -188,7 +188,6 @@ const API_CONFIG = {
   [PROVIDER.GOOGLE]: {
     nearbySearch: async (params) => {
       try {
-        // Build search parameters for Google Places API
         const searchParams = new URLSearchParams({
           location: `${params.lat},${params.lng}`,
           radius: params.radius,
@@ -196,43 +195,20 @@ const API_CONFIG = {
           key: params.apiKey
         });
 
-        // Add keyword filtering if provided - using proper Google Places API format
         if (params.keywords && params.keywords.length > 0) {
-          // Google Places API expects a single keyword string
-          // Multiple keywords should be space-separated, not pipe-separated
           searchParams.append('keyword', params.keywords.join(' '));
         }
 
-        // Debug logging
-        console.log('Search Parameters:', {
-          lat: params.lat,
-          lng: params.lng,
-          radius: params.radius,
-          type: params.type,
-          keywords: params.keywords,
-          // Don't log the API key
-        });
-
         const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${searchParams}`;
-        
-        // Log URL without API key
-        console.log('Request URL:', url.replace(params.apiKey, 'REDACTED'));
-        
         const response = await fetch(url);
         const data = await response.json();
         
         if (!response.ok) {
-          console.error('Google Places API error details:', data);
           throw new Error(`Google Places API error: ${response.status} - ${data.error_message || 'Unknown error'}`);
         }
-
-        // Log response status and result count
-        console.log('Response status:', response.status);
-        console.log('Results count:', data.results?.length || 0);
         
         return data;
       } catch (error) {
-        console.error('Google Places API error:', error);
         throw error;
       }
     },
@@ -320,17 +296,27 @@ const API_CONFIG = {
   }
 };
 
-// Add coordinate rounding functions
+// Coordinate quantization tuned for map viewing
 function getCoordinateGridSize(lat, lng, radius) {
-    // For coordinates, we want much finer precision
-    // ~111,111 meters per degree at equator
-    // radius 50m -> ~0.0001° grid (~11m)
-    // radius 500m -> ~0.0005° grid (~55m)
-    // radius 2000m -> ~0.001° grid (~111m)
-    // radius 5000m -> ~0.002° grid (~222m)
-    return Math.min(radius / 111111, 0.01);  // Cap at 0.01 degrees (~1.1km)
+    let gridSize;
+    if (radius <= 100) {
+        gridSize = 0.0001;
+    } else if (radius <= 500) {
+        gridSize = 0.0005;
+    } else if (radius <= 1000) {
+        gridSize = 0.001;
+    } else {
+        gridSize = 0.002;
+    }
+
+    const lngGridSize = gridSize / Math.cos(lat * Math.PI / 180);
+    return {
+        lat: gridSize,
+        lng: lngGridSize
+    };
 }
 
+// Radius quantization
 function getRadiusGridSize(radius) {
     // For radius, we can be more aggressive
     // radius 50m -> round to nearest 50m
@@ -340,16 +326,12 @@ function getRadiusGridSize(radius) {
     return Math.pow(2, Math.floor(Math.log2(radius/50))) * 50;
 }
 
+// Update the cache key generation to use separate lat/lng grids
 function getNearbySearchCacheKey(lat, lng, radius, type, provider, keywords = []) {
-    // Round coordinates based on radius
-    const coordGridSize = getCoordinateGridSize(lat, lng, radius);
-    const roundedLat = (Math.round(lat / coordGridSize) * coordGridSize).toFixed(5);
-    const roundedLng = (Math.round(lng / coordGridSize) * coordGridSize).toFixed(5);
-    
-    // Round radius logarithmically (using ceil)
+    const grid = getCoordinateGridSize(lat, lng, radius);
+    const roundedLat = (Math.round(lat / grid.lat) * grid.lat).toFixed(5);
+    const roundedLng = (Math.round(lng / grid.lng) * grid.lng).toFixed(5);
     const roundedRadius = Math.ceil(radius / getRadiusGridSize(radius)) * getRadiusGridSize(radius);
-
-    // Generate cache key - keep provider for flexibility
     const keywordString = keywords.length > 0 ? `:${keywords.sort().join('+')}` : '';
     return `${API_VERSION}:nearby:${provider}:${roundedLat},${roundedLng}:${roundedRadius}:${type}${keywordString}`;
 }
@@ -511,51 +493,33 @@ export default {
 
       if (useCache) {
         try {
-          console.log('Checking cache for key:', cacheKey);
           let cachedData = await env.PLACES_KV.getWithMetadata(cacheKey, { type: "json" });
-          console.log('Cache result:', {
-              hit: !!cachedData?.value,
-              timestamp: cachedData?.metadata?.timestamp,
-              age: Date.now() - (cachedData?.metadata?.timestamp || 0)
-          });
-          
           if (cachedData && cachedData.value) {
-              const cacheAge = Date.now() - (cachedData.metadata?.timestamp || 0);
-              const maxAge = cacheDuration.KV * 1000;
-              
-              if (cacheAge < maxAge) {
-                  return new Response(JSON.stringify(cachedData.value), {
-                      headers: { 
-                          ...corsHeaders,
-                          "Content-Type": "application/json", 
-                          "Cache-Control": `public, max-age=${cacheDuration.KV}`,
-                          "X-Cache-Hit": "true",
-                          "X-Cache-Type": "places_nearby"
-                      },
-                  });
-              }
+            const cacheAge = Date.now() - (cachedData.metadata?.timestamp || 0);
+            const maxAge = cacheDuration.KV * 1000;
+            
+            if (cacheAge < maxAge) {
+              console.log(`Cache HIT with key: ${cacheKey}`);
+              return new Response(JSON.stringify(cachedData.value), {
+                  headers: { 
+                      ...corsHeaders,
+                      "Content-Type": "application/json", 
+                      "Cache-Control": `public, max-age=${cacheDuration.KV}`,
+                      "X-Cache-Hit": "true",
+                      "X-Cache-Type": "places_nearby"
+                  },
+              });
+            }
           }
         } catch (error) {
-          console.error("Cache fetch error:", error);
+          // Silent fail on cache errors
         }
       }
 
-      // Cache miss - log and fetch fresh data
-      console.log('Cache miss for nearby places:', {
-          lat,
-          lng,
-          radius,
-          type,
-          roundedValues: {
-              lat: (Math.round(lat / getCoordinateGridSize(lat, lng, radius)) * getCoordinateGridSize(lat, lng, radius)).toFixed(5),
-              lng: (Math.round(lng / getCoordinateGridSize(lat, lng, radius)) * getCoordinateGridSize(lat, lng, radius)).toFixed(5),
-              radius: Math.ceil(radius / getRadiusGridSize(radius)) * getRadiusGridSize(radius),
-              coordGridSize: getCoordinateGridSize(lat, lng, radius),
-              radiusGridSize: getRadiusGridSize(radius)
-          },
-          cacheKey
-      });
+      // Single log for cache miss
+      console.log(`Cache MISS with key: ${cacheKey}`);
 
+      // Cache miss - log and fetch fresh data
       const searchParams = {
         lat,
         lng,
