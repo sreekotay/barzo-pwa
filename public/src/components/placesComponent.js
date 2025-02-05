@@ -435,21 +435,23 @@ export default class PlacesComponent {
         const container = this._getContainer();
         if (!container) return;
 
-        if (!places?.length) {
-            container.innerHTML = `
+        if (!places?.length) {// this needs to be debugged - do not remove the no places message
+          /*  container.innerHTML = ` 
                 <div class="no-places-message">
                     No places found nearby
                 </div>
-            `;
-            this._carousel.collapse();
-            return;
+            `;*/
+           // this._carousel.collapse();*/  //if thise runs somehow we get unsubscribed from the location service
+            //return;
+        } else {
+            // Remove the "no places" message if it exists
+            const noPlacesMessage = container.querySelector('.no-places-message');
+            if (noPlacesMessage) {
+                noPlacesMessage.remove();
+            }
+
         }
 
-        // Remove the "no places" message if it exists
-        const noPlacesMessage = container.querySelector('.no-places-message');
-        if (noPlacesMessage) {
-            noPlacesMessage.remove();
-        }
 
         this._currentPlaces = places;
         let placesScroll = this._carousel.getOrCreateScrollContainer();
