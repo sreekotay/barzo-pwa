@@ -55,7 +55,7 @@
  */
 
 // Version number for cache invalidation
-const API_VERSION = 'v1.0.3;
+const API_VERSION = 'v1.0.3';
 
 // CORS headers for cross-origin requests
 const corsHeaders = {
