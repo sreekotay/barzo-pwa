@@ -52,11 +52,10 @@
  *   -H "X-API-Key: your_api_key"
  * ```
  * 
- * @version v1.0.1
  */
 
 // Version number for cache invalidation
-const API_VERSION = 'v1.0.2';
+const API_VERSION = 'v1.0.3;
 
 // CORS headers for cross-origin requests
 const corsHeaders = {
@@ -65,6 +64,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, X-API-Key, X-Google-API-Key',
   'Access-Control-Max-Age': '86400',  // 24 hours
 };
+
 
 // Grid configuration
 const GRID_SIZE_METERS = 100; // Base grid size
