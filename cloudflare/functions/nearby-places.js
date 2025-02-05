@@ -82,9 +82,9 @@ const CACHE_DURATION = {
         DETAILS: 604800   // 1 week for place details
     },
     DEVELOPMENT: {
-        KV: 600,         // 10 minutes for development
-        BROWSER: 600,    // 10 minutes for development
-        DETAILS: 600     // 10 minutes for development
+        KV: 604800,         // 10 minutes for development
+        BROWSER: 604800,    // 10 minutes for development
+        DETAILS: 604800     // 10 minutes for development
     }
 };
 
