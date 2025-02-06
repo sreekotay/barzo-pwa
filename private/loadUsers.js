@@ -34,6 +34,7 @@ async function loadUsers(filename = 'users.json') {
       console.log(`Processing user: ${userData.phone} ${userData.email}`);
       
       // Check if user exists by phone or email
+      userData.email = (userData.email || `${userData.phone}@placeholder.com`).toLowerCase();
       const { data: existingUser, error: searchError } = await supabase
         .rpc('search_auth_user', {
           p_phone: userData.phone,
@@ -52,7 +53,7 @@ async function loadUsers(filename = 'users.json') {
         console.log('No user found by phone or email');
         // Create new user in auth.users
         const { data: { user }, error: authError } = await supabase.auth.admin.createUser({
-          email: userData.email || `${userData.phone}@placeholder.com`,
+          email: userData.email,
           phone: userData.phone,
           user_metadata: {
             external_id: userData.id,

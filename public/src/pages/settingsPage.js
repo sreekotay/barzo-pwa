@@ -50,6 +50,15 @@ export default class SettingsPage {
                             Reset
                         </button>
                     </div>
+
+                    <!-- Sign Out Button -->
+                    <div class="flex items-center justify-between border-t pt-4 mt-4">
+                        <label class="text-gray-700">Sign Out</label>
+                        <button id="signOutButton" 
+                            class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors">
+                            Sign Out
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -77,6 +86,19 @@ export default class SettingsPage {
                 
                 // After reset is complete, navigate to home
                 window.location.hash = 'home';
+            });
+        }
+
+        const signOutButton = document.getElementById('signOutButton');
+        if (signOutButton) {
+            signOutButton.addEventListener('click', async () => {
+                try {
+                    await window.socialService?.signOut();
+                    window.location.href = '/login.html';
+                } catch (error) {
+                    console.error('Error signing out:', error);
+                    alert('Error signing out. Please try again.');
+                }
             });
         }
     }

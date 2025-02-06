@@ -25,9 +25,6 @@ export default class ProfilePage {
                 // Use router's closeSheet but prevent default hash change
                 const prevHash = window.location.hash;
                 window.router.closeSheet();
-                if (window.location.hash === '') {
-                    window.history.replaceState(null, '', prevHash.split('##')[0]);
-                }
             }
         });
         

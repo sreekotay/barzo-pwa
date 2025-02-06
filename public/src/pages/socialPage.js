@@ -1,3 +1,5 @@
+import CDNize from '../utils/cdnize.js';
+
 export default class SocialPage {
     constructor(mapService) {
         this._mapService = mapService;
@@ -9,7 +11,6 @@ export default class SocialPage {
     }
 
     async initialize() {
-        // Get initial list of users
         const { data: personas, error } = await this._mapService._supabase
             .from('personas')
             .select('*')
@@ -19,47 +20,80 @@ export default class SocialPage {
 
         if (error) {
             console.error('Error loading users:', error);
-            return `
-                <div class="text-red-500 p-4">
-                    Error loading users: ${error.message}
-                </div>
-            `;
+            return this._renderError('Error loading users:', error.message);
         }
 
         this.hasMore = personas.length === this.pageSize;
+        return this._renderMainLayout(personas);
+    }
 
+    _renderMainLayout(personas) {
         return `
             <div class="p-4">
                 <div class="bg-white rounded-lg shadow p-4">
                     <h1 class="text-2xl font-bold mb-4">Social</h1>
-                    
-                    <!-- Search and Filters -->
-                    <div class="mb-6">
-                        <input type="text" 
-                            placeholder="Search people..." 
-                            class="w-full p-2 border rounded-lg"
-                            id="social-search">
-                        <div class="flex gap-2 mt-2">
-                            <button class="px-3 py-1 bg-gray-100 rounded-full text-sm" data-filter="all">All</button>
-                            <button class="px-3 py-1 bg-gray-100 rounded-full text-sm" data-filter="following">Following</button>
-                            <button class="px-3 py-1 bg-gray-100 rounded-full text-sm" data-filter="blocked">Blocked</button>
-                        </div>
-                    </div>
-
-                    <!-- Results List -->
-                    <div id="social-results" class="space-y-4">
-                        ${this._renderPersonas(personas)}
-                    </div>
-                    
-                    <!-- Load More -->
-                    ${this.hasMore ? `
-                        <div class="text-center mt-4">
-                            <button id="load-more" class="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">
-                                Load More
-                            </button>
-                        </div>
-                    ` : ''}
+                    ${this._renderSearchAndFilters()}
+                    ${this._renderResultsList(personas)}
+                    ${this._renderLoadMoreButton()}
                 </div>
+            </div>
+        `;
+    }
+
+    _renderSearchAndFilters() {
+        return `
+            <div class="mb-6">
+                <input type="text" 
+                    placeholder="Search people..." 
+                    class="w-full p-2 border rounded-lg"
+                    id="social-search">
+                <div class="flex gap-2 mt-2">
+                    <button class="px-3 py-1 bg-gray-100 rounded-full text-sm" data-filter="all">All</button>
+                    <button class="px-3 py-1 bg-gray-100 rounded-full text-sm" data-filter="following">Following</button>
+                    <button class="px-3 py-1 bg-gray-100 rounded-full text-sm" data-filter="blocked">Blocked</button>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderResultsList(personas) {
+        return `
+            <div id="social-results" class="space-y-4">
+                ${this._renderPersonas(personas)}
+            </div>
+        `;
+    }
+
+    _renderLoadMoreButton() {
+        return this.hasMore ? `
+            <div class="text-center mt-4">
+                <button id="load-more" class="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">
+                    Load More
+                </button>
+            </div>
+        ` : '';
+    }
+
+    _renderError(title, message) {
+        return `
+            <div class="text-red-500 p-4">
+                ${title} ${message}
+            </div>
+        `;
+    }
+
+    _renderLoadingSpinner() {
+        return `
+            <div class="flex justify-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-red-500"></div>
+            </div>
+        `;
+    }
+
+    _renderNoResults(query = '') {
+        return `
+            <div class="text-gray-500 p-4 text-center">
+                No users found ${query ? `matching "${query}"` : ''}.
             </div>
         `;
     }
@@ -107,20 +141,12 @@ export default class SocialPage {
         if (!resultsContainer) return;
 
         if (!window.socialService) {
-            resultsContainer.innerHTML = `
-                <div class="text-red-500 p-4">
-                    Please log in to view social features.
-                </div>
-            `;
+            resultsContainer.innerHTML = this._renderError('Please log in to view social features.');
             return;
         }
 
         try {
-            resultsContainer.innerHTML = `
-                <div class="flex justify-center">
-                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-red-500"></div>
-                </div>
-            `;
+            resultsContainer.innerHTML = this._renderLoadingSpinner();
 
             const personas = await window.socialService.searchPersonas({
                 query,
@@ -129,11 +155,7 @@ export default class SocialPage {
             });
 
             if (!personas.length) {
-                resultsContainer.innerHTML = `
-                    <div class="text-gray-500 p-4 text-center">
-                        No users found ${query ? `matching "${query}"` : ''}.
-                    </div>
-                `;
+                resultsContainer.innerHTML = this._renderNoResults(query);
                 return;
             }
 
@@ -141,11 +163,7 @@ export default class SocialPage {
 
         } catch (error) {
             console.error('Error loading results:', error);
-            resultsContainer.innerHTML = `
-                <div class="text-red-500 p-4">
-                    Error loading results: ${error.message}
-                </div>
-            `;
+            resultsContainer.innerHTML = this._renderError('Error loading results:', error.message);
         }
     }
 
@@ -176,7 +194,7 @@ export default class SocialPage {
                            (persona.metadata?.profile?.last_name?.[0] || '');
             
             const avatarHtml = persona.avatar_url ? 
-                `<img src="${persona.avatar_url}" 
+                `<img src="${CDNize.profile(persona.avatar_url)}" 
                       class="w-12 h-12 rounded-full object-cover"
                       alt="${persona.handle}">` :
                 `<div class="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 text-xl font-medium">
