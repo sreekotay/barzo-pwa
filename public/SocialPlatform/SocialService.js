@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import CDNize from '/src/utils/cdnize.js';
 
 /** Mapping of relationship types to their numeric levels for comparison */
 const RELATIONSHIP_LEVELS = {
@@ -27,28 +27,39 @@ const VALID_TRANSITIONS = {
 }
 
 /**
+ * Helper function to get CDN URL for images
+ * @param {string} url - Original image URL
+ * @returns {string} CDN optimized URL
+ */
+function cdnizeUrl(url) {
+    if (!url) return '/default-avatar.png';
+    if (url.startsWith('http')) {
+        return `https://cdn.barzo.com/cdn-cgi/image/width=96,height=96,fit=cover,quality=80,format=auto/${url}`;
+    }
+    return url;
+}
+
+/**
  * Service for managing social relationships and interactions
  */
 export class SocialService {
   /**
    * Creates a new SocialService instance
    * @param {Object} supabase - Initialized Supabase client
+   * @param {Object} user - Current user data
    * @throws {Error} If supabase client is not authenticated
    */
-  constructor(supabase) {
+  constructor(supabase, user) {
     if (!supabase) {
       throw new Error('Supabase client is required')
     }
 
-    this.supabase = supabase
-    
-    // Get current session
-    const { data: { session } } = supabase.auth.getSession()
-    if (!session?.user) {
-      throw new Error('Authentication required')
+    if (!user) {
+      throw new Error('User is required')
     }
 
-    this.currentUser = session.user
+    this.supabase = supabase
+    this.currentUser = user
 
     // Listen for auth state changes
     supabase.auth.onAuthStateChange((_event, session) => {
@@ -317,64 +328,45 @@ export class SocialService {
    * @returns {Promise<Array>} Matching personas
    */
   async searchPersonas({ query = '', type = 'user', limit = 20, offset = 0, filter = 'all' }) {
-    let blockedIds = []
-    
-    if (filter !== 'all') {
-      // Get blocked/muted users
-      const { data: relationships } = await this.supabase
-        .from('effective_relationships')
-        .select('target_id, effective_type')
-        .eq('user_id', this.currentUser.id)
-        .in('effective_type', ['blocked', 'muted'])
-        .eq('target_type', 'user')
+    let queryBuilder = this.supabase
+        .from('personas')
+        .select()
+        .eq('type', type);
 
-      if (filter === 'blocked') {
-        // Only show blocked users
-        blockedIds = relationships
-          ?.filter(r => r.effective_type === 'blocked')
-          .map(r => r.target_id) || []
-      } else if (filter === 'muted') {
-        // Only show muted users
-        blockedIds = relationships
-          ?.filter(r => r.effective_type === 'muted')
-          .map(r => r.target_id) || []
-      } else if (filter === 'active') {
-        // Exclude blocked and muted
-        blockedIds = relationships?.map(r => r.target_id) || []
-      }
-    }
-
-    // Query personas with filters
-    const queryObj = this.supabase
-      .from('personas')
-      .select(`
-        *,
-        effective_relationships!inner(effective_type)
-      `)
-      .eq('type', type)
-
-    // Apply filter
-    if (filter === 'blocked' || filter === 'muted') {
-      queryObj.in('owner_id', blockedIds)
-    } else if (filter === 'active') {
-      queryObj.not('owner_id', 'in', blockedIds)
-    }
-
-    // Apply search
+    // Apply search if query exists
     if (query) {
-      queryObj.or(`
-        handle.ilike.%${query}%,
-        metadata->profile->first_name.ilike.%${query}%,
-        metadata->profile->last_name.ilike.%${query}%
-      `)
+        queryBuilder = queryBuilder.or(
+            `handle.ilike.%${query}%,` +
+            `metadata->profile->>first_name.ilike.%${query}%,` +
+            `metadata->profile->>last_name.ilike.%${query}%`
+        );
     }
 
-    const { data, error } = await queryObj
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
+    // Apply ordering and pagination
+    queryBuilder = queryBuilder
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
 
-    if (error) throw error
-    return data
+    const { data, error } = await queryBuilder;
+    if (error) {
+        console.error('Full error:', error);
+        console.error('Query details:', {
+            type,
+            query,
+            filter,
+            offset,
+            limit
+        });
+        throw error;
+    }
+
+    // Process avatar URLs through CDN
+    return data.map(persona => ({
+        ...persona,
+        avatar_url: persona.avatar_url ? 
+            CDNize.profile(persona.avatar_url) : 
+            '/default-avatar.png'
+    }));
   }
 
   /**

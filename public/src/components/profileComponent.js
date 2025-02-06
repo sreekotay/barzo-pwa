@@ -4,9 +4,10 @@ import CDNize from '../utils/cdnize.js';
 
 const barzoApiUrl = 'https://api.public.barzo.com';
 class ProfileComponent {
-    constructor() {
+    constructor(userId = null) {
         this.userData = null;
         this.socialStats = null;
+        this.userId = userId;  // Store the userId
         // Create custom event for data loading
         this.dataLoadedEvent = new CustomEvent('profileDataLoaded', {
             detail: { component: this }
@@ -21,7 +22,9 @@ class ProfileComponent {
         this.initialize();
     }
 
-    async initialize() {
+    async initialize(skipFetch = false) {
+        if (skipFetch) return;
+        
         try {
             // Get and parse auth token from localStorage
             const authTokenStr = localStorage.getItem('authToken');
@@ -31,17 +34,18 @@ class ProfileComponent {
             }
 
             const authToken = JSON.parse(authTokenStr);
-            const userId = authToken.token.identity.userId;
             const accessToken = authToken.token.accessToken;
+            // Use provided userId or fall back to current user's id
+            const targetUserId = this.userId || authToken.token.identity.userId;
 
             // Fetch both profile data and social stats in parallel
             const [profileResponse, statsResponse] = await Promise.all([
-                fetch(`${barzoApiUrl}/v1/users/${userId}`, {
+                fetch(`${barzoApiUrl}/v1/users/${targetUserId}`, {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`
                     }
                 }),
-                fetch(`${barzoApiUrl}/v1/users/${userId}/stats/social`, {
+                fetch(`${barzoApiUrl}/v1/users/${targetUserId}/stats/social`, {
                     headers: {
                         'Authorization': `Bearer ${accessToken}`
                     }
@@ -55,11 +59,12 @@ class ProfileComponent {
             this.userData = await profileResponse.json();
             this.socialStats = await statsResponse.json();
             
-            // Dispatch event when data is loaded
-            document.dispatchEvent(this.dataLoadedEvent);
+            // Only update header pic if viewing own profile
+            if (!this.userId) {
+                this.updateHeaderProfilePic();
+            }
             
-            // Only update header pic here, let the event handler update the profile UI
-            this.updateHeaderProfilePic();
+            document.dispatchEvent(this.dataLoadedEvent);
 
         } catch (error) {
             console.error('Error fetching profile:', error);
@@ -76,8 +81,8 @@ class ProfileComponent {
             day: 'numeric'
         });
 
-        
-        const locationString = await this.mapService.getReverseGeocodedLocation();
+        // Only show location for own profile
+        const locationString = !this.userId ? await this.mapService.getReverseGeocodedLocation() : null;
 
         const content = `
             <div class="receipt-images">
@@ -100,9 +105,11 @@ class ProfileComponent {
 
                 <div class="receipt-header">
                     <div class="receipt-logo">BARZO_BAR_TAB/${this.userData.nickname || 'profile'}</div>
-                    <div class="receipt-address">
-                        Currently in ${locationString}
-                    </div >
+                    ${!this.userId ? `
+                        <div class="receipt-address">
+                            Currently in ${locationString}
+                        </div>
+                    ` : ''}
                     <div class="receipt-address">${this.userData.fullName} • REG#${this.userData.id.slice(0,4)} ID#${this.userData.id.slice(-4)}</div>
                 </div>
 
@@ -329,6 +336,23 @@ class ProfileComponent {
                 ${initials}
             </div>
         `;
+    }
+
+    // Add new method to update profile with payload
+    async updateWithPayload(profilePayload, statsPayload = null) {
+        try {
+            this.userData = profilePayload;
+            this.socialStats = statsPayload || this.socialStats;
+            
+            // Update UI elements
+            this.updateHeaderProfilePic();
+            await this.updateProfileUI();
+            
+            // Dispatch the data loaded event
+            document.dispatchEvent(this.dataLoadedEvent);
+        } catch (error) {
+            console.error('Error updating profile with payload:', error);
+        }
     }
 }
 

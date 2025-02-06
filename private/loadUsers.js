@@ -19,11 +19,11 @@ const supabase = createClient(
   }
 );
 
-async function loadUsers() {
+async function loadUsers(filename = 'users.json') {
   try {
     // Read users from JSON file
     const usersData = JSON.parse(
-      await fs.readFile(path.join(__dirname, 'users.json'), 'utf8')
+      await fs.readFile(path.join(__dirname, filename), 'utf8')
     );
 
     // Process first 5 users
@@ -100,6 +100,7 @@ async function loadUsers() {
         avatar_url: userData.profileImage,
         metadata: {
           profile: {
+            id:userData.id,
             banner_image_url: userData.bannerImage,
             first_name: userData.firstName,
             last_name: userData.lastName,
@@ -126,7 +127,7 @@ async function loadUsers() {
         continue;
       }
 
-      console.log(`Successfully processed user: ${userData.firstName} ${userData.lastName}`);
+      console.log(`Successfully processed user: ${userData.firstName} ${userData.lastName} - ${userData.id}`);
     }
 
   } catch (error) {
@@ -134,4 +135,6 @@ async function loadUsers() {
   }
 }
 
-loadUsers().then(() => console.log('Done!'));
+// Update the function call to allow passing a filename
+const filename = process.argv[2] || 'users.json';
+loadUsers(filename).then(() => console.log('Done!'));

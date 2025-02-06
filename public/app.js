@@ -3,6 +3,12 @@ import MapService from '/src/services/mapService.js';
 import Router from './src/router.js';
 import sheetComponent from '/src/components/sheetComponent.js';
 import ProfileComponent from '/src/components/profileComponent.js';
+import HomePage from './src/pages/homePage.js';
+import ProfilePage from './src/pages/profilePage.js';
+import SettingsPage from './src/pages/settingsPage.js';
+import PlaceDetailsPage from './src/pages/placeDetailsPage.js';
+import SocialPage from './src/pages/socialPage.js';  // We'll need to create this
+import { SocialService } from './SocialPlatform/SocialService.js';  // Add this import
 
 // global variables
 let mapService;
@@ -194,7 +200,7 @@ async function userAuthInit() {
 
             const {data, error} = await mapService._supabase.auth.getUser();
             if (error) mapService._supabase = null; // force a reload of the page below
-            console.log("supabasUser", data);
+            mapService._supabaseUser = data;
         } catch (error) {
             console.error('Error setting Supabase session:', error);
             console.error('[SHOULD REDIRECT]', error);
@@ -227,8 +233,13 @@ async function startupThisApp() {
         searchInputLevel: 'neighborhood'
     });
 
-    userAuthInit();
- 
+    userAuthInit().then(()=>{ 
+        // Initialize SocialService after auth
+        if (mapService._supabase) {
+            window.socialService = new SocialService(mapService._supabase, mapService._supabaseUser);
+        }
+    });
+
 
     // Register callbacks before map initialization
     mapService.onPlacesChange((places) => {
@@ -273,10 +284,19 @@ async function startupThisApp() {
     // Initialize profile component for header icon
     window.profileComponent = new ProfileComponent();
     
-    // Initialize router
+    // Initialize router with routes configuration
     router = new Router(mapService);
-    // Make router globally accessible immediately after creation
     window.router = router;
+    
+    // Configure routes
+    router.setRoutes({
+        '': () => new HomePage(mapService),
+        'home': () => new HomePage(mapService),
+        'settings': () => new SettingsPage(),
+        'profile': () => new ProfilePage(),
+        'place': () => new PlaceDetailsPage(mapService),
+        'social': () => new SocialPage(mapService)  // Add social route
+    }, ['place', 'profile']);  // Sheet routes
     
     // Handle initial route
     const path = window.location.hash.slice(1) || 'home';

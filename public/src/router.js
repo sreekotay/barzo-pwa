@@ -8,17 +8,15 @@ export default class Router {
         this._mapService = mapService;
         this._currentPage = null;
         this._currentObserver = null;
-        this.routes = {
-            '': () => new HomePage(this._mapService),
-            'home': () => new HomePage(this._mapService),
-            'settings': () => new SettingsPage(),
-            'profile': () => new ProfilePage(),
-            'place': () => new PlaceDetailsPage(this._mapService)
-        };
-        
-        this.sheetRoutes = new Set(['place', 'profile']);
-        this.routeStack = ['home']; // Stack of routes
+        this.routes = {};  // Routes will be set from app.js
+        this.sheetRoutes = new Set();  // Sheet routes will be set from app.js
+        this.routeStack = ['home'];
         this.currentSheetDepth = 0;
+    }
+
+    setRoutes(routes, sheetRoutes) {
+        this.routes = routes;
+        this.sheetRoutes = new Set(sheetRoutes);
     }
 
     async handleRoute(route = '') {
@@ -35,7 +33,6 @@ export default class Router {
 
         const [mainRoute, underlyingRoute] = route.split('##');
         
-        // Parse the main route and params, handling the case where params are part of a sheet route
         let basePath, params;
         const questionMarkIndex = mainRoute.indexOf('?');
         if (questionMarkIndex !== -1) {
@@ -47,7 +44,6 @@ export default class Router {
         }
         
         const searchParams = new URLSearchParams(params);
-        
         const getPage = this.routes[basePath];
         
         if (!getPage) {
@@ -58,9 +54,7 @@ export default class Router {
         this._currentPage = getPage();
         
         if (this.sheetRoutes.has(basePath)) {
-            // Handle sheet route
             if (route.endsWith('##')) {
-                // New sheet being opened
                 this.currentSheetDepth++;
                 window.history.replaceState(
                     null, 
@@ -79,7 +73,6 @@ export default class Router {
                 await this._currentPage.render();
             }
         } else {
-            // Handle normal route
             this.currentSheetDepth = 0;
             this.routeStack[0] = basePath;
             
