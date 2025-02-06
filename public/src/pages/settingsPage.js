@@ -74,6 +74,9 @@ export default class SettingsPage {
             resetButton.addEventListener('click', () => {
                 localStorage.removeItem('lastGlobeAnimation');
                 alert('Globe animation will play on next app load');
+                
+                // After reset is complete, navigate to home
+                window.location.hash = 'home';
             });
         }
     }
