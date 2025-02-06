@@ -429,7 +429,7 @@ CREATE POLICY "Users can read persona relationships" ON persona_relationships
 CREATE POLICY "Users can manage their relationships" ON persona_relationships
   FOR ALL USING (auth.uid() = user_id);
 
--- Function to search auth.users by phone or email
+-- Update search_auth_user function to include private data
 CREATE OR REPLACE FUNCTION search_auth_user(
   p_phone TEXT,
   p_email TEXT
@@ -437,36 +437,36 @@ CREATE OR REPLACE FUNCTION search_auth_user(
   id UUID,
   email VARCHAR,
   phone VARCHAR,
-  created_at TIMESTAMPTZ
+  created_at TIMESTAMPTZ,
+  -- Add fields from personas_private
+  full_name TEXT,
+  dob DATE,
+  persona_id UUID,
+  private_metadata JSONB
 ) SECURITY DEFINER AS $$
 BEGIN
-  -- First try phone
   RETURN QUERY
   SELECT 
     au.id,
     au.email::VARCHAR,
     au.phone::VARCHAR,
-    au.created_at
+    au.created_at,
+    pp.full_name,
+    pp.dob,
+    pp.persona_id,
+    pp.metadata AS private_metadata
   FROM auth.users au
-  WHERE au.phone = p_phone
-  LIMIT 1;
-
-  -- If no result, try email
-  IF NOT FOUND AND p_email IS NOT NULL THEN
-    RETURN QUERY
-    SELECT 
-      au.id,
-      au.email::VARCHAR,
-      au.phone::VARCHAR,
-      au.created_at
-    FROM auth.users au
-    WHERE au.email = p_email
+  LEFT JOIN personas p ON p.owner_id = au.id
+  LEFT JOIN personas_private pp ON pp.persona_id = p.id
+  WHERE 
+    -- Search by phone or email
+    (au.phone = p_phone OR (p_email IS NOT NULL AND au.email = p_email))
+    -- Only return first match
     LIMIT 1;
-  END IF;
 END;
 $$ LANGUAGE plpgsql;
 
--- Grant execute to authenticated users
+-- Grant execute to service role
 GRANT EXECUTE ON FUNCTION search_auth_user TO service_role;
 
 -- Add transaction helpers
@@ -549,4 +549,138 @@ CREATE POLICY "Users can delete their own personas" ON personas
 -- Only authenticated users can create personas
 CREATE POLICY "Authenticated users can create personas" ON personas
     FOR INSERT
-    WITH CHECK (auth.role() = 'authenticated'); 
+    WITH CHECK (auth.role() = 'authenticated');
+
+-- Create private personas table for PII data
+CREATE TABLE personas_private (
+    persona_id UUID PRIMARY KEY REFERENCES personas(id) ON DELETE CASCADE,
+    email TEXT,
+    phone TEXT,
+    dob DATE,
+    full_name TEXT,
+    address JSONB,
+    social_security TEXT,
+    tax_id TEXT,
+    metadata JSONB DEFAULT '{}'::JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Add index for faster lookups
+CREATE INDEX idx_personas_private_persona_id ON personas_private(persona_id);
+
+-- Enable RLS
+ALTER TABLE personas_private ENABLE ROW LEVEL SECURITY;
+
+-- Only allow owners and admins to read private data
+CREATE POLICY "Users can view their own private persona data" ON personas_private
+    FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM personas p
+            WHERE p.id = persona_id
+            AND (
+                -- Owner can view
+                p.owner_id = auth.uid()
+                OR
+                -- Managers and owners of the persona can view
+                EXISTS (
+                    SELECT 1 FROM persona_relationships pr
+                    WHERE pr.persona_id = p.id
+                    AND pr.user_id = auth.uid()
+                    AND pr.type IN ('manager', 'owner')
+                )
+            )
+        )
+    );
+
+-- Only allow owners and admins to update private data
+CREATE POLICY "Users can update their own private persona data" ON personas_private
+    FOR UPDATE
+    USING (
+        EXISTS (
+            SELECT 1 FROM personas p
+            WHERE p.id = persona_id
+            AND (
+                p.owner_id = auth.uid()
+                OR
+                EXISTS (
+                    SELECT 1 FROM persona_relationships pr
+                    WHERE pr.persona_id = p.id
+                    AND pr.user_id = auth.uid()
+                    AND pr.type IN ('manager', 'owner')
+                )
+            )
+        )
+    );
+
+-- Only allow owners to insert private data
+CREATE POLICY "Users can insert their own private persona data" ON personas_private
+    FOR INSERT
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM personas p
+            WHERE p.id = persona_id
+            AND p.owner_id = auth.uid()
+        )
+    );
+
+-- Only allow owners to delete private data
+CREATE POLICY "Users can delete their own private persona data" ON personas_private
+    FOR DELETE
+    USING (
+        EXISTS (
+            SELECT 1 FROM personas p
+            WHERE p.id = persona_id
+            AND p.owner_id = auth.uid()
+        )
+    );
+
+-- Add trigger to update updated_at timestamp
+CREATE TRIGGER set_timestamp_personas_private
+    BEFORE UPDATE ON personas_private
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_set_timestamp();
+
+-- Add function to safely get private persona data
+CREATE OR REPLACE FUNCTION get_persona_private_data(p_persona_id UUID)
+RETURNS TABLE (
+    email TEXT,
+    phone TEXT,
+    dob DATE,
+    full_name TEXT,
+    address JSONB,
+    metadata JSONB
+) SECURITY DEFINER AS $$
+BEGIN
+    -- Check if user has permission
+    IF EXISTS (
+        SELECT 1 FROM personas p
+        WHERE p.id = p_persona_id
+        AND (
+            p.owner_id = auth.uid()
+            OR
+            EXISTS (
+                SELECT 1 FROM persona_relationships pr
+                WHERE pr.persona_id = p.id
+                AND pr.user_id = auth.uid()
+                AND pr.type IN ('manager', 'owner')
+            )
+        )
+    ) THEN
+        RETURN QUERY
+        SELECT 
+            pp.email,
+            pp.phone,
+            pp.dob,
+            pp.full_name,
+            pp.address,
+            pp.metadata
+        FROM personas_private pp
+        WHERE pp.persona_id = p_persona_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Grant execute to authenticated users
+GRANT EXECUTE ON FUNCTION get_persona_private_data TO authenticated; 

@@ -21,7 +21,7 @@ CREATE TABLE personas (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     type persona_type NOT NULL,
-    handle TEXT UNIQUE NOT NULL CHECK (handle ~ '^[a-zA-Z0-9_]{1,30}$'),
+    handle TEXT UNIQUE NOT NULL CHECK (handle ~ '^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,29}$'),
     avatar_url TEXT,
     metadata JSONB DEFAULT '{}'::JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -29,32 +29,51 @@ CREATE TABLE personas (
 ```
 ✅ Personas represent businesses, groups, or alternate identities
 ✅ Core fields are normalized for efficient querying
-✅ All profile data stored in flexible metadata JSONB
+✅ Public profile data stored in metadata JSONB
 ✅ GIN index on metadata enables efficient filtering
+✅ Handles must start with letter/number/underscore, can contain hyphens after
+✅ Maximum handle length of 30 characters
 
-#### **Profile Metadata Structure**
+3. Personas Private Table
+```sql
+CREATE TABLE personas_private (
+    persona_id UUID PRIMARY KEY REFERENCES personas(id) ON DELETE CASCADE,
+    email TEXT,
+    phone TEXT,
+    dob DATE,
+    full_name TEXT,
+    address JSONB,
+    social_security TEXT,
+    tax_id TEXT,
+    metadata JSONB DEFAULT '{}'::JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+✅ Stores sensitive/private persona information
+✅ Strict RLS policies limit access to owners and managers
+✅ Flexible metadata for type-specific private data
+✅ Cascading deletes with parent persona
 
-The `metadata` JSONB field contains type-specific profile information:
+#### **Private Metadata Structure**
+
+The private `metadata` JSONB field contains sensitive type-specific information:
 
 For type "user":
 ```json
 {
-  "profile": {
-    "banner_image_url": "https://...",
+  "identity": {
     "first_name": "John",
     "last_name": "Doe",
-    "dob": "1990-01-01",
-    "nickname": "Johnny",
-    "email": "john@example.com",
-    "phone": "+1234567890",
-    "bio": "Software developer...",
-    "gender": "male"
+    "external_id": "12345"
   },
-  "privacy": {
-    "dob": "friends",
-    "email": "members",
-    "phone": "managers",
-    "last_name": "public"
+  "preferences": {
+    "email_notifications": true,
+    "theme": "dark"
+  },
+  "settings": {
+    "language": "en",
+    "timezone": "America/Los_Angeles"
   }
 }
 ```
@@ -62,23 +81,21 @@ For type "user":
 For type "business":
 ```json
 {
-  "profile": {
-    "banner_image_url": "https://...",
-    "business_name": "Acme Corp",
-    "description": "We make everything",
-    "website": "https://acme.com",
-    "contact": {
-      "email": "info@acme.com",
-      "phone": "+1234567890"
-    },
-    "hours": {
-      "mon": ["9:00", "17:00"],
-      "tue": ["9:00", "17:00"]
-    },
-    "location": {
-      "address": "123 Main St",
-      "lat": 37.7749,
-      "lng": -122.4194
+  "banking": {
+    "account_number": "****1234",
+    "routing_number": "****5678",
+    "bank_name": "First National Bank"
+  },
+  "tax": {
+    "ein": "12-3456789",
+    "tax_jurisdiction": "CA"
+  },
+  "legal": {
+    "incorporation_date": "2020-01-01",
+    "business_type": "LLC",
+    "registered_agent": {
+      "name": "John Smith",
+      "address": "123 Main St"
     }
   }
 }
@@ -157,7 +174,7 @@ Different persona types have different profile expectations:
 - **Band**: Highlights genre, bookings, members
 - **Event**: Dates, venue, ticketing info
 
-3. Persona Relationships Table
+4. Persona Relationships Table
 ```sql
 CREATE TABLE persona_relationships (
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -171,7 +188,7 @@ CREATE TABLE persona_relationships (
 ✅ Stores all relationships, including social connections, memberships, and moderation roles.
 ✅ blocked and muted override any other relationship.
 
-4. Effective Relationships Table
+5. Effective Relationships Table
 ```sql
 CREATE TABLE effective_relationships (
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -183,7 +200,7 @@ CREATE TABLE effective_relationships (
 ```
 ✅ Precomputed for efficient RLS and permission lookups.
 
-5. Posts Table
+6. Posts Table
 ```sql
 CREATE TABLE posts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -204,7 +221,7 @@ CREATE TABLE posts (
 ✅ Tags are stored as a JSONB array of tag GUIDs for optimized filtering.
 ✅ Uses visibility_level and response_level to control access.
 
-6. Post Read & Delivery Tracking
+7. Post Read & Delivery Tracking
 ```sql
 CREATE TABLE post_read_delivery (
     post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
@@ -216,7 +233,7 @@ CREATE TABLE post_read_delivery (
 ```
 ✅ For non-public posts, tracks when a post is delivered and read.
 
-7. Notifications Table
+8. Notifications Table
 ```sql
 CREATE TABLE notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -234,7 +251,7 @@ CREATE TABLE notifications (
 ✅ Stores all notifications, including persona-related ones.
 ✅ handled_at is used for moderators acting on persona mentions.
 
-8. Tags Table
+9. Tags Table
 ```sql
 CREATE TABLE tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -243,7 +260,7 @@ CREATE TABLE tags (
 ```
 ✅ Stores tags with GUIDs to prevent inconsistencies.
 
-9. Post Engagements Table (Reactions, Topics, etc.)
+10. Post Engagements Table (Reactions, Topics, etc.)
 ```sql
 CREATE TABLE post_engagement (
     post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
@@ -256,7 +273,7 @@ CREATE TABLE post_engagement (
 ```
 ✅ Stores reactions, topics, and tags in one optimized table.
 
-10. Mentions Table
+11. Mentions Table
 ```sql
 CREATE TABLE mentions (
     post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
@@ -267,7 +284,7 @@ CREATE TABLE mentions (
 ```
 ✅ Stores mentions for efficient notifications and lookups.
 
-11. User Blocks Table
+12. User Blocks Table
 ```sql
 CREATE TABLE user_blocks (
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,

@@ -398,4 +398,37 @@ export class SocialService {
     if (error) throw error
     return data
   }
+
+  /**
+   * Gets private data for a persona if user has permission
+   * @param {string} personaId - UUID of the persona
+   * @returns {Promise<Object>} Private persona data
+   */
+  async getPersonaPrivateData(personaId) {
+    const { data, error } = await this.supabase
+      .rpc('get_persona_private_data', {
+        p_persona_id: personaId
+      });
+
+    if (error) throw error;
+    return data;
+  }
+
+  /**
+   * Updates private data for a persona
+   * @param {string} personaId - UUID of the persona
+   * @param {Object} privateData - Private data to update
+   */
+  async updatePersonaPrivateData(personaId, privateData) {
+    const { error } = await this.supabase
+      .from('personas_private')
+      .upsert({
+        persona_id: personaId,
+        ...privateData
+      }, {
+        onConflict: 'persona_id'
+      });
+
+    if (error) throw error;
+  }
 } 

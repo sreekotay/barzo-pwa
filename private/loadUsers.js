@@ -26,8 +26,8 @@ async function loadUsers(filename = 'users.json') {
       await fs.readFile(path.join(__dirname, filename), 'utf8')
     );
 
-    // Process first 5 users
-    const testUsers = usersData//.slice(0, 5);
+    // Process users
+    const testUsers = usersData;
     
     for (const userData of testUsers) {
       if (!userData.phone || !userData.active) continue;
@@ -73,7 +73,7 @@ async function loadUsers(filename = 'users.json') {
         userId = existingUser.id;
         
         // Update phone/email if needed
-        if (existingUser.phone !== userData.phone) {
+        if (existingUser.phone !== userData.phone.replace('+','')) {
           console.log('updating phone number from', existingUser.phone, 'to', userData.phone);
           const { error } = await supabase.auth.admin.updateUserById(
             userId,
@@ -92,39 +92,72 @@ async function loadUsers(filename = 'users.json') {
         }
       }
 
-      // Create or update persona
+      // Create or update persona with non-sensitive data
       const personaData = {
         owner_id: userId,
         type: 'user',
         handle: userData.nickname?.toLowerCase().replace(/\s+/g, '_') || 
-                  `user_${userId.split('-')[0]}`,  // Take first segment of UUID
+                `user_${userId.split('-')[0]}`,  // Take first segment of UUID
         avatar_url: userData.profileImage,
         metadata: {
           profile: {
-            id:userData.id,
             banner_image_url: userData.bannerImage,
-            first_name: userData.firstName,
-            last_name: userData.lastName,
-            dob: userData.dob,
             nickname: userData.nickname,
-            email: userData.email,
-            phone: userData.phone,
             bio: userData.bio,
-            gender: userData.gender?.toLowerCase()
+            gender: userData.gender?.toLowerCase(),
+            barzo_api_id: userData.id  // Added barzo_api_id to public profile
           }
         }
       };
 
-      const { error: personaError } = await supabase
+      // Insert/update the persona
+      const { data: persona, error: personaError } = await supabase
         .from('personas')
         .upsert({
           ...personaData
         }, {
-          onConflict: 'handle'
-        });
+          onConflict: 'handle',
+          returning: true
+        })
+        .select();
 
       if (personaError) {
         console.error('Error creating persona:', personaError);
+        continue;
+      }
+
+      if (!persona || !persona[0]) {
+        console.error('No persona returned after upsert');
+        continue;
+      }
+
+      // Create or update private persona data
+      const privateData = {
+        persona_id: persona[0].id,
+        email: userData.email,
+        phone: userData.phone,
+        dob: userData.dob,
+        full_name: `${userData.firstName} ${userData.lastName}`.trim(),
+        address: null, // Add address if available in userData
+        metadata: {
+          identity: {
+            first_name: userData.firstName,
+            last_name: userData.lastName,
+            external_id: userData.id
+          },
+          preferences: userData.preferences || {},
+          settings: userData.settings || {}
+        }
+      };
+
+      const { error: privateError } = await supabase
+        .from('personas_private')
+        .upsert(privateData, {
+          onConflict: 'persona_id'
+        });
+
+      if (privateError) {
+        console.error('Error creating private persona data:', privateError);
         continue;
       }
 

@@ -203,7 +203,7 @@ export default class SocialPage {
 
             return `
                 <div class="flex items-center py-1 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                     onclick="window.location.hash = 'profile?id=${persona.metadata?.profile?.id || 'MISSING-ID'}##'">
+                     onclick="window.location.hash = 'profile?id=${persona.metadata?.profile?.barzo_api_id || 'MISSING-ID'}##'">
                     <div class="flex items-center gap-3">
                         ${avatarHtml}
                         <div>
