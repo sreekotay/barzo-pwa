@@ -277,8 +277,8 @@
                 authInfoEl.classList.remove('hidden');
                 authDataEl.textContent = JSON.stringify(globalAuthToken, null, 2);
             } catch (error) {
-                signOut(true); 
                 loadingEl.innerHTML = `<p class="text-red-500">Error parsing auth token: ${error.message}</p>`;
+                //signOut(true); 
             }
         });
     </script>
