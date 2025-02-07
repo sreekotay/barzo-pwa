@@ -10,6 +10,9 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" type="image/png" href="/icon-192.png">
     <link href="https://fonts.googleapis.com/css?family=Libre+Barcode+128|VT323" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sriracha&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
@@ -29,12 +32,14 @@
         }
     </script>
     <style>
-        body {
+        .body {
             font-family: 'SF Pro Text',-apple-system,BlinkMacSystemFont,Roboto,'Segoe UI',Helvetica,Arial,sans-serif,'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol';
         }
 
         body {
-            font-weight: 300;
+
+            font-family: "Sriracha", serif;
+            font-weight: 400;
             font-style: normal;
         }
 
@@ -78,7 +83,7 @@
         <div class="hidden lg:block w-64 bg-white shadow-lg">
             <div class="p-4">
                 <div class="text-2xl font-bold text-red-500 mb-8">
-                    <a href="#" class="hover:text-red-600">Barzo</a>
+                    <a href="#" class="body hover:text-red-600">Barzo</a>
                 </div>
                 <nav>
                     <ul class="space-y-4">
@@ -99,7 +104,7 @@
                     <span class="hamburger-line w-6 h-0.5 bg-white mb-1.5"></span>
                     <span class="hamburger-line w-6 h-0.5 bg-white"></span>
                 </button>
-                <a href="#" class="text-l font-bold text-white hover:text-gray-100">BARZO</a>
+                <a href="#" class="body text-l font-bold text-white hover:text-gray-100">BARZO</a>
                 <div class="w-6"></div> <!-- Spacer for symmetry -->
             </div>
         </header>

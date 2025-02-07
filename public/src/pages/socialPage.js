@@ -8,6 +8,7 @@ export default class SocialPage {
         this.pageSize = 20;
         this.loading = false;
         this.hasMore = true;
+        this._lastQuery = null;
     }
 
     async initialize() {
@@ -32,9 +33,11 @@ export default class SocialPage {
             <div class="p-4">
                 <div class="bg-white rounded-lg shadow p-4">
                     <h1 class="text-2xl font-bold mb-4">Social</h1>
-                    ${this._renderSearchAndFilters()}
-                    ${this._renderResultsList(personas)}
-                    ${this._renderLoadMoreButton()}
+                    <div class="body">
+                        ${this._renderSearchAndFilters()}
+                        ${this._renderResultsList(personas)}
+                        ${this._renderLoadMoreButton()}
+                    </div>
                 </div>
             </div>
         `;
@@ -124,10 +127,45 @@ export default class SocialPage {
         // Reset pagination when search changes
         this.currentPage = 0;
         this.hasMore = true;
+        const resultsContainer = document.getElementById('social-results');
+        if (resultsContainer) {
+            resultsContainer.innerHTML = ''; // Clear existing results
+        }
+
+        // If clearing search, force a full reset
+        if (!query.trim() && this._lastQuery) {
+            this._lastQuery = null;
+            // Reinitialize the page
+            const { data: personas, error } = await this._mapService._supabase
+                .from('personas')
+                .select('*')
+                .eq('type', 'user')
+                .order('created_at', { ascending: false })
+                .range(0, this.pageSize - 1);
+
+            if (!error && resultsContainer) {
+                this.hasMore = personas.length === this.pageSize;
+                resultsContainer.innerHTML = this._renderPersonas(personas);
+                const loadMoreContainer = document.getElementById('load-more')?.parentElement;
+                if (loadMoreContainer) {
+                    loadMoreContainer.innerHTML = this._renderLoadMoreButton();
+                }
+            }
+            return;
+        }
+
         await this._loadResults(query);
     }
 
     async _handleFilter(filter) {
+        // Reset pagination when filter changes
+        this.currentPage = 0;
+        this.hasMore = true;
+        const resultsContainer = document.getElementById('social-results');
+        if (resultsContainer) {
+            resultsContainer.innerHTML = ''; // Clear existing results
+        }
+        
         // Update active filter button
         document.querySelectorAll('[data-filter]').forEach(btn => {
             btn.classList.toggle('bg-red-500', btn.dataset.filter === filter);
@@ -148,49 +186,55 @@ export default class SocialPage {
         }
 
         try {
-            resultsContainer.innerHTML = this._renderLoadingSpinner();
+            if (this.currentPage === 0) {
+                resultsContainer.innerHTML = this._renderLoadingSpinner();
+            }
 
-            // If no query, revert to initial load behavior
-            if (!query.trim()) {
+            if (query.trim()) {
+                // Handle search
+                this._lastQuery = query;
+                const personas = await window.socialService.searchPersonas({
+                    query,
+                    type: 'user',
+                    filter
+                });
+
+                if (!personas.length) {
+                    resultsContainer.innerHTML = this._renderNoResults(query);
+                    return;
+                }
+
+                // Hide load more button during search
+                this.hasMore = false;
+                resultsContainer.innerHTML = this._renderPersonas(personas);
+                const loadMoreContainer = document.getElementById('load-more')?.parentElement;
+                if (loadMoreContainer) {
+                    loadMoreContainer.innerHTML = '';
+                }
+            } else {
+                // Normal pagination view
                 const { data: personas, error } = await this._mapService._supabase
                     .from('personas')
                     .select('*')
                     .eq('type', 'user')
                     .order('created_at', { ascending: false })
-                    .range(0, this.pageSize - 1);
+                    .range(this.currentPage * this.pageSize, (this.currentPage * this.pageSize) + this.pageSize - 1);
 
                 if (error) throw error;
 
                 this.hasMore = personas.length === this.pageSize;
-                resultsContainer.innerHTML = this._renderPersonas(personas);
                 
-                // Re-render load more button
+                if (this.currentPage === 0) {
+                    resultsContainer.innerHTML = this._renderPersonas(personas);
+                } else {
+                    resultsContainer.insertAdjacentHTML('beforeend', this._renderPersonas(personas));
+                }
+                
                 const loadMoreContainer = document.getElementById('load-more')?.parentElement;
                 if (loadMoreContainer) {
                     loadMoreContainer.innerHTML = this._renderLoadMoreButton();
                 }
-                return;
             }
-
-            const personas = await window.socialService.searchPersonas({
-                query,
-                type: 'user',
-                filter
-            });
-
-            if (!personas.length) {
-                resultsContainer.innerHTML = this._renderNoResults(query);
-                return;
-            }
-
-            // Hide load more button during search
-            this.hasMore = false;
-            resultsContainer.innerHTML = this._renderPersonas(personas);
-            const loadMoreContainer = document.getElementById('load-more')?.parentElement;
-            if (loadMoreContainer) {
-                loadMoreContainer.innerHTML = '';
-            }
-
         } catch (error) {
             console.error('Error loading results:', error);
             resultsContainer.innerHTML = this._renderError('Error loading results:', error.message);

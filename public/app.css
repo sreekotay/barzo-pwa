@@ -99,11 +99,11 @@
 
 .google-places-input {
     width: calc(75vw) !important;
-    padding: 8px 12px 8px 28px !important;
+    padding: 4px 12px 4px 28px !important;
     _border: 1px solid #E5E7EB !important;
     border-radius: 8px !important;
     _box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-    font-size: 14px !important;
+    font-size: 16px !important;
     outline: none !important;
     background: none !important;
 }
@@ -391,6 +391,7 @@
 }
 
 .place-card .types-scroll {
+    opacity: 0.8;
     white-space: nowrap;
     overflow-x: auto;
     -ms-overflow-style: none;
@@ -572,7 +573,7 @@
     width: 100%;
     height: 4px;  /* Make handle taller */
     background: #444;  /* Light gray background */
-    background: #ddd;  /* Light gray background */
+    background: #e0e0e0;  /* Light gray background */
     cursor: ns-resize;
     border: none;
     position: relative;
@@ -592,7 +593,7 @@
     transform: translate(-50%, -50%);
     width: 40px;
     height: 4px;
-    background: #9CA3AF;  /* Gray indicator */
+    background: #ddd;  /* Gray indicator */
     border-radius: 2px;
     transition: background-color 0.2s ease;
 }
@@ -839,6 +840,10 @@ header .profile-pic {
     margin-top: 0;
 }
 
+.mapboxgl-ctrl-group:not(:empty) {
+    border:none !important;
+}
+
 /* Add these styles for dark mode map controls */
 .mapboxgl-ctrl-group {
     __background-color: #404040 !important;
@@ -859,13 +864,9 @@ header .profile-pic {
 /* Style the zoom controls border */
 .mapboxgl-ctrl-group:not(:empty) {
     border: 1px solid #aaa !important;
-    box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
 }
 
 /* Style the individual control borders */
-.mapboxgl-ctrl-group > button + button {
-    border-top: 1px solid #606060 !important;
-}
 
 .circle-number {
     display: inline-block;

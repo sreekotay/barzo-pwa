@@ -337,8 +337,7 @@ export class SocialService {
     if (query) {
         queryBuilder = queryBuilder.or(
             `handle.ilike.%${query}%,` +
-            `metadata->profile->>first_name.ilike.%${query}%,` +
-            `metadata->profile->>last_name.ilike.%${query}%`
+            `metadata->profile->>full_name.ilike.%${query}%`
         );
     }
 

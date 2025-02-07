@@ -104,6 +104,9 @@ async function loadUsers(filename = 'users.json') {
             banner_image_url: userData.bannerImage,
             nickname: userData.nickname,
             bio: userData.bio,
+            full_name: `${userData.firstName} ${userData.lastName}`.trim(),
+            first_name: userData.firstName,
+            last_name: userData.lastName,
             gender: userData.gender?.toLowerCase(),
             barzo_api_id: userData.id  // Added barzo_api_id to public profile
           }
@@ -137,12 +140,9 @@ async function loadUsers(filename = 'users.json') {
         email: userData.email,
         phone: userData.phone,
         dob: userData.dob,
-        full_name: `${userData.firstName} ${userData.lastName}`.trim(),
         address: null, // Add address if available in userData
         metadata: {
           identity: {
-            first_name: userData.firstName,
-            last_name: userData.lastName,
             external_id: userData.id
           },
           preferences: userData.preferences || {},

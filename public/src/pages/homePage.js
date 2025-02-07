@@ -17,11 +17,6 @@ export default class HomePage {
                 </div>
                 <div id="bar-container"></div>
 
-                <div class="flex px-4 mb-1 items-center" data-carousel-id="restaurants">
-                    <h3 class="text-sm font-bold text-black-800">RESTAURANTS</h3>
-                    <div class="w-2 h-2 rounded-full bg-amber-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="restaurant"></div>
-                </div>
-                <div id="restaurant-container"></div>
 
                 <div class="flex px-4 mb-1 items-center" data-carousel-id="cigar">
                     <h3 class="text-sm font-bold text-black-800">CIGAR & HOOKAH</h3>
@@ -34,6 +29,13 @@ export default class HomePage {
                     <div class="w-2 h-2 rounded-full bg-green-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="music"></div>
                 </div>
                 <div id="music-container"></div>
+
+                <div class="flex px-4 mb-1 items-center" data-carousel-id="restaurants">
+                    <h3 class="text-sm font-bold text-black-800">RESTAURANTS</h3>
+                    <div class="w-2 h-2 rounded-full bg-amber-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="restaurant"></div>
+                </div>
+                <div id="restaurant-container"></div>
+
             </div>
         `;
     }

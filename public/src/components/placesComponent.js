@@ -513,7 +513,7 @@ export default class PlacesComponent {
                 </div>
             ` : ''}
             <div class="flex-1 px-2 pb-2">
-                <div class="types-scroll nowrap"></div>
+                <div class="types-scroll nowrap body"></div>
                 <h3 class="name"></h3>
                 <div class="flex" style="align-items: baseline;">
                     <div class="status"></div>
