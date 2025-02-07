@@ -156,12 +156,12 @@
             return urlParams.get(param);
         }
 
-        function signOut() {
+        function signOut(stay = false) {
             localStorage.removeItem('authToken');
             // Remove authToken from URL and redirect
             const url = new URL(window.location.href);
             url.searchParams.delete('authToken');
-            window.location.href = url.toString();
+            if (!stay) window.location.href = url.toString();
         }
 
         async function syncProfile(user, barzoUser) {
@@ -277,7 +277,7 @@
                 authInfoEl.classList.remove('hidden');
                 authDataEl.textContent = JSON.stringify(globalAuthToken, null, 2);
             } catch (error) {
-                signOut(); 
+                signOut(true); 
                 loadingEl.innerHTML = `<p class="text-red-500">Error parsing auth token: ${error.message}</p>`;
             }
         });
