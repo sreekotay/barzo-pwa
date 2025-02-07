@@ -348,6 +348,7 @@
 }
 
 .place-card {
+    position: relative;
     flex: 0 0 auto;
     _width: 240px;
     min-width: 180px;

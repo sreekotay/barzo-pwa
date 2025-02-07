@@ -514,8 +514,11 @@ export default class PlacesComponent {
             ` : ''}
             <div class="flex-1 px-2 pb-2">
                 <div class="types-scroll nowrap body"></div>
-                <h3 class="name"></h3>
-                <div class="flex" style="align-items: baseline;">
+                <h3 class="name" _style="position: absolute; top: 8px; left: 0; right:0; padding: 2px 2px; 
+                                        background: linear-gradient(90deg, rgba(255,255,255,1), rgba(255,255,255,0));"
+                                        style="position:relative; top:-2px"
+                                        ></h3>
+                <div class="flex" style="align-items: baseline;" >
                     <div class="status"></div>
                     <div class="price-level text-gray-500 text-xs ml-2"></div>
                     <div class="flex-1"></div>
