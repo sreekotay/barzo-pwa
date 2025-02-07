@@ -125,7 +125,7 @@ export default class MarkerManager {
         if (this._popup) {
             this._popup.remove();
             this._popup = null;
-        }
+'3'        }
 
         this._selectedMarkerId = placeId;
         this._markers.forEach((marker) => {

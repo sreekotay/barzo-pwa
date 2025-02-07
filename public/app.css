@@ -75,7 +75,8 @@
     padding: 0 16px;
     z-index: 30;
     background: #111;
-    color: white;
+    background: #f7f7f7;
+    __color: white;
 }
 
 .search-icon {
@@ -348,12 +349,12 @@
 
 .place-card {
     flex: 0 0 auto;
-    width: 240px;
-    min-width: 280px;
+    _width: 240px;
+    min-width: 180px;
     background: white;
     padding: 0;
     overflow: hidden;
-    border: 2px solid #d7d7d7;
+    border-bottom: 3px solid transparent;
     transition: border-color 0.2s ease-out;
     border-radius: 2px;
 }
@@ -422,14 +423,11 @@
     color:#333;
 }
 
-.place-card .status {
-}
-
-.place-card .status.open {
+.pc-status.open {
     color: #00A572;  /* Always green for open status */
 }
 
-.place-card .status.closed {
+.pc-status.closed {
     color: #E31C5F;
 }
 
@@ -574,6 +572,7 @@
     width: 100%;
     height: 4px;  /* Make handle taller */
     background: #444;  /* Light gray background */
+    background: #ddd;  /* Light gray background */
     cursor: ns-resize;
     border: none;
     position: relative;
@@ -722,8 +721,8 @@ header {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
-    border-bottom: 4px solid black;
-    box-shadow: 0 18px 32px rgba(0, 0, 0, 0.8);
+    __border-bottom: 4px solid black;
+    __box-shadow: 0 18px 32px rgba(0, 0, 0, 0.8);
 }
 
 /* Update footer to not conflict with header */
@@ -842,11 +841,11 @@ header .profile-pic {
 
 /* Add these styles for dark mode map controls */
 .mapboxgl-ctrl-group {
-    background-color: #404040 !important;
+    __background-color: #404040 !important;
 }
 
 .mapboxgl-ctrl-group button {
-    background-color: #404040 !important;
+    __background-color: #404040 !important;
 }
 
 .mapboxgl-ctrl-group button .mapboxgl-ctrl-icon {
@@ -859,7 +858,7 @@ header .profile-pic {
 
 /* Style the zoom controls border */
 .mapboxgl-ctrl-group:not(:empty) {
-    border: 1px solid #606060 !important;
+    border: 1px solid #aaa !important;
     box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
 }
 

@@ -72,8 +72,8 @@ class SheetComponent {
                 }
 
                 .sheet-container.profile-mode {
-                    height: 90vh;
-                    max-height: 90vh;
+                    height: 100vh;
+                    max-height: 100vh;
                 }
 
                 .sheet-container.profile-mode .sheet-content {

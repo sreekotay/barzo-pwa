@@ -121,7 +121,9 @@ export default class SocialPage {
     }
 
     async _handleSearch(query) {
-        // Debounce this in production
+        // Reset pagination when search changes
+        this.currentPage = 0;
+        this.hasMore = true;
         await this._loadResults(query);
     }
 
@@ -148,6 +150,28 @@ export default class SocialPage {
         try {
             resultsContainer.innerHTML = this._renderLoadingSpinner();
 
+            // If no query, revert to initial load behavior
+            if (!query.trim()) {
+                const { data: personas, error } = await this._mapService._supabase
+                    .from('personas')
+                    .select('*')
+                    .eq('type', 'user')
+                    .order('created_at', { ascending: false })
+                    .range(0, this.pageSize - 1);
+
+                if (error) throw error;
+
+                this.hasMore = personas.length === this.pageSize;
+                resultsContainer.innerHTML = this._renderPersonas(personas);
+                
+                // Re-render load more button
+                const loadMoreContainer = document.getElementById('load-more')?.parentElement;
+                if (loadMoreContainer) {
+                    loadMoreContainer.innerHTML = this._renderLoadMoreButton();
+                }
+                return;
+            }
+
             const personas = await window.socialService.searchPersonas({
                 query,
                 type: 'user',
@@ -159,7 +183,13 @@ export default class SocialPage {
                 return;
             }
 
+            // Hide load more button during search
+            this.hasMore = false;
             resultsContainer.innerHTML = this._renderPersonas(personas);
+            const loadMoreContainer = document.getElementById('load-more')?.parentElement;
+            if (loadMoreContainer) {
+                loadMoreContainer.innerHTML = '';
+            }
 
         } catch (error) {
             console.error('Error loading results:', error);

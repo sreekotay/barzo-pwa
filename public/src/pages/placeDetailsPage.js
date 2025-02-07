@@ -90,11 +90,12 @@ export default class PlaceDetailsPage {
         }
 
         // Fetch the detailed place data first
-        const details = await this.getPlaceDetails(placeId);
+        let details = await this.getPlaceDetails(placeId);
         if (!details) {
             console.error('Failed to fetch place details');
             return;
         }
+        details = details.result || details;
 
         // Get current day name in lowercase
         const today = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];

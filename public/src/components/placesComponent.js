@@ -273,7 +273,7 @@ export default class PlacesComponent {
             };
 
             // Build URL with all parameters including keywords
-            const url = new URL(`${PLACES_API_URL}/nearby-places`);
+            const url = new URL(`${PLACES_API_URL}/nearby?detailLevel=full`);
             url.searchParams.set('lat', roundedLocation.lat);
             url.searchParams.set('lng', roundedLocation.lng);
             url.searchParams.set('radius', Math.floor(radius / 100) * 100);
@@ -304,10 +304,12 @@ export default class PlacesComponent {
                 throw new Error(errorData.error || errorData.message || 'Failed to fetch places');
             }
 
-            const places = await response.json();
+            let places = await response.json();
             if (places) {
+                // Extract Google places from response
+                const googlePlaces = places.google || places;
                 const mapLocation = this._locationService.getMapLocation();
-                const processedPlaces = this._processPlacesData(places, mapLocation);
+                const processedPlaces = this._processPlacesData(googlePlaces, mapLocation);
                 
                 // Update markers but don't automatically show them
                 this._markerManager.updateMarkers(processedPlaces, this._config.markerColors);
@@ -590,8 +592,12 @@ export default class PlacesComponent {
         // Update status
         const statusEl = card.querySelector('.status');
         if (statusEl) {
-            statusEl.className = `status ${place.opening_hours?.open_now ? 'open' : 'closed'}`;
-            statusEl.textContent = place.opening_hours?.open_now ? 'OPEN' : 'CLOSED';
+            if ('opening_hours' in place) {
+                statusEl.className = `pc-status ${place.opening_hours?.open_now ? 'open' : 'closed'}`;
+                statusEl.textContent = place.opening_hours?.open_now ? 'OPEN' : 'CLOSED';
+            } else {
+                statusEl.textContent = '';
+            }
         }
 
         // Update price level
