@@ -312,13 +312,14 @@ async function startupThisApp() {
 // Update the initialize function
 export async function initialize() {
     try {
-        await startupThisApp();
+        //await 
+        startupThisApp();
         locationService.requestGeoLocation();
         const { closeMenu } = initializeMobileMenu();
         
         // Setup navigation links
         document.querySelectorAll('a[href^="#"]').forEach(link => {
-            link.addEventListener('click', (e) => {
+            link.addEventListener('click', (e) => { 
                 closeMenu(); // Always close menu on any navigation click
             });
         });

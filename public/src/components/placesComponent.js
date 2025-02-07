@@ -593,7 +593,7 @@ export default class PlacesComponent {
         const statusEl = card.querySelector('.status');
         if (statusEl) {
             if ('opening_hours' in place) {
-                statusEl.className = `pc-status ${place.opening_hours?.open_now ? 'open' : 'closed'}`;
+                statusEl.className = `body pc-status ${place.opening_hours?.open_now ? 'open' : 'closed'}`;
                 statusEl.textContent = place.opening_hours?.open_now ? 'OPEN' : 'CLOSED';
             } else {
                 statusEl.textContent = '';

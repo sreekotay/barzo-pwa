@@ -99,13 +99,13 @@
 
 .google-places-input {
     width: calc(75vw) !important;
-    padding: 4px 12px 4px 28px !important;
     _border: 1px solid #E5E7EB !important;
     border-radius: 8px !important;
     _box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
     font-size: 16px !important;
     outline: none !important;
     background: none !important;
+    padding-left: 28px !important;
 }
 
 .google-places-input:focus {
@@ -422,6 +422,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     color:#333;
+}
+
+.pc-status {
+    font-size: 12px;
 }
 
 .pc-status.open {
