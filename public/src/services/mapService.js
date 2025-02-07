@@ -110,17 +110,30 @@ class MapService {
                 // Update marker
                 this._updateMapMarker(mapLocation);
                 
-                // Compare map location with user location
+                // Compare map center with user location to determine if center button should show
                 const userLocation = this._locationService.getUserLocation();
+                const mapCenter = this._map.getCenter();
                 const centerButton = document.getElementById('center-button');
+                
                 if (centerButton) {
-                    if (userLocation && mapLocation) {
-                        const isManual = Math.abs(mapLocation.lat - userLocation.lat) > 0.0001 || 
-                                       Math.abs(mapLocation.lng - userLocation.lng) > 0.0001;
-                        centerButton.style.display = isManual ? 'block' : 'none';
-                        this._isManualMode = isManual;
+                    // Always show the button for now
+                    centerButton.style.display = 'block';
+                    
+                    if (userLocation) {
+                        const isOffCenter = Math.abs(mapCenter.lat - userLocation.lat) > 0.0001 || 
+                                          Math.abs(mapCenter.lng - userLocation.lng) > 0.0001;
+                        // Log state changes
+                        console.log('Center button would be:', isOffCenter ? 'shown' : 'hidden', {
+                            mapCenter: mapCenter,
+                            userLocation: userLocation,
+                            diff: {
+                                lat: Math.abs(mapCenter.lat - userLocation.lat),
+                                lng: Math.abs(mapCenter.lng - userLocation.lng)
+                            }
+                        });
+                        this._isManualMode = isOffCenter;
                     } else {
-                        centerButton.style.display = 'none';
+                        console.log('No user location available');
                         this._isManualMode = false;
                     }
                 }
@@ -323,17 +336,16 @@ class MapService {
                 lat: center.lat
             };
 
-            // Check if this was a user drag (not programmatic)
+            // Only update location service if this was a user drag
             if (this._map.dragPan.isActive()) {
                 this._lastAutocompletePlace = false;  // Clear the flag on manual drag
                 if (this._onMapDrag) {
                     this._onMapDrag();
                 }
+                this._locationService.setMapLocation(location);
             }
-
-            this._locationService.setMapLocation(location);
             
-            // Notify callbacks about the map movement
+            // Always notify callbacks about the map movement
             this._notifyCallbacks([], {
                 event: 'map_moved',
                 source: 'map_interaction',
@@ -394,7 +406,7 @@ class MapService {
     async _initializeSearch() {
         // Create search container first
         const searchContainer = document.getElementById(this._searchInput);
-        searchContainer.className = 'search-container';
+        searchContainer.className = 'search-container body';
 
         // Add search icon
         const searchIcon = document.createElement('div');

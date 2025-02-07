@@ -9,35 +9,21 @@ export default class HomePage {
     }
 
     async render() {
-        return `
-            <div class="pt-4">
-                <div class="flex px-4 mb-1 items-center" data-carousel-id="bars">
-                    <h3 class="text-sm font-bold text-black-800">BARS & CLUBS</h3>
-                    <div class="w-2 h-2 rounded-full bg-red-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="bar"></div>
+        return `<div class="pt-4">
+                    ${this.carouselHelper('BARS & CLUBS', 'red', 'bar')}
+                    ${this.carouselHelper('CIGAR & HOOKAH', 'purple', 'cigar')}
+                    ${this.carouselHelper('KARAOKE & LIVE MUSIC', 'gold', 'music')}    
+                    ${this.carouselHelper('RESTAURANTS', 'amber', 'restaurant')}
                 </div>
-                <div id="bar-container"></div>
+                `;
+    }
 
-
-                <div class="flex px-4 mb-1 items-center" data-carousel-id="cigar">
-                    <h3 class="text-sm font-bold text-black-800">CIGAR & HOOKAH</h3>
-                    <div class="w-2 h-2 rounded-full bg-purple-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="cigar"></div>
+    carouselHelper(title, color, name) {
+        return `<div class="flex px-4 mb-1 items-center" data-carousel-id="${name}">
+                    <h3 class="text-sm font-bold text-black-800">${title}</h3>
+                    <div class="w-2 h-2 rounded-full bg-${color}-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="${name}"></div>
                 </div>
-                <div id="cigar-hookah-container"></div>
-
-                <div class="flex px-4 mb-1 items-center" data-carousel-id="music">
-                    <h3 class="text-sm font-bold text-black-800">KARAOKE & LIVE MUSIC</h3>
-                    <div class="w-2 h-2 rounded-full bg-green-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="music"></div>
-                </div>
-                <div id="music-container"></div>
-
-                <div class="flex px-4 mb-1 items-center" data-carousel-id="restaurants">
-                    <h3 class="text-sm font-bold text-black-800">RESTAURANTS</h3>
-                    <div class="w-2 h-2 rounded-full bg-amber-600 mx-2 opacity-0 transition-opacity duration-300" data-dot="restaurant"></div>
-                </div>
-                <div id="restaurant-container"></div>
-
-            </div>
-        `;
+                <div id="${name}-container"></div>`
     }
 
     async afterRender() {
@@ -83,7 +69,7 @@ export default class HomePage {
         const cigarHookahComponent = new PlacesComponent(
             this.mapService,
             locationService,
-            '#cigar-hookah-container',
+            '#cigar-container',
             {
                 placeTypes: ['bar'],
                 maxResults: 15,
