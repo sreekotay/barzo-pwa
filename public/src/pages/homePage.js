@@ -27,7 +27,7 @@ export default class HomePage {
     }
 
     async afterRender() {
-        // Initialize bars component
+        // Initialize components first
         const barsComponent = new PlacesComponent(
             this.mapService, 
             locationService, 
@@ -44,7 +44,7 @@ export default class HomePage {
                 onExpand: () => this._handleCarouselExpand('bars')
             }
         );
-        this._carousels.set('bars', barsComponent);
+        this._carousels.set('bar', barsComponent);
 
         // Initialize restaurants component
         const restaurantsComponent = new PlacesComponent(
@@ -63,7 +63,7 @@ export default class HomePage {
                 onExpand: () => this._handleCarouselExpand('restaurants')
             }
         );
-        this._carousels.set('restaurants', restaurantsComponent);
+        this._carousels.set('restaurant', restaurantsComponent);
 
         // Initialize cigar and hookah component
         const cigarHookahComponent = new PlacesComponent(
@@ -111,7 +111,10 @@ export default class HomePage {
         window.cigarHookahComponent = cigarHookahComponent;
         window.musicComponent = musicComponent;
 
-        // Wait for map to be ready before expanding all carousels
+        // Set up intersection observer first
+        this._setupCarouselObserver();
+
+        // Then wait for map to be ready before expanding carousels
         if (this.mapService.isMapReady()) {
             this._expandAllCarousels();
         } else {
@@ -119,22 +122,6 @@ export default class HomePage {
                 this._expandAllCarousels();
             });
         }
-
-        // Set up intersection observer for carousel containers
-        this._setupCarouselObserver();
-    }
-
-    _expandAllCarousels() {
-        setTimeout(() => {
-            const location = locationService.getUserLocationCached();
-            if (location) {
-                // Expand all carousels
-                this._carousels.forEach((component, id) => {
-                    console.log(`Initial expansion of carousel: ${id}`);
-                    component._handleHeaderClick(true);
-                });
-            }
-        }, 100);
     }
 
     _handleCarouselExpand(activeId) {
@@ -149,43 +136,90 @@ export default class HomePage {
             this._intersectionObserver.disconnect();
         }
 
-        // Get the scrolling container - this is where the overflow-y: auto is set
         const scrollContainer = document.querySelector('div#main-app');
-        console.log('Setting up carousel observer with container:', scrollContainer);
         if (!scrollContainer) return;
+
+        // Log container details
+        const containerStyle = getComputedStyle(scrollContainer);
+        console.log('Scroll container details:', {
+            id: scrollContainer.id,
+            height: scrollContainer.offsetHeight,
+            scrollHeight: scrollContainer.scrollHeight,
+            overflow: containerStyle.overflow,
+            overflowY: containerStyle.overflowY,
+            position: containerStyle.position
+        });
 
         this._intersectionObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
-                const carouselId = entry.target.getAttribute('data-carousel-id');
+                const carouselId = entry.target.id.replace('-container', '');
                 if (!carouselId) return;
 
+                console.log('Carousel ID:', carouselId);
                 const component = this._carousels.get(carouselId);
                 if (!component) return;
 
-                const intersectionRatio = entry.intersectionRatio;
-                console.log(`Intersection for ${carouselId}:`, {
-                    ratio: intersectionRatio,
-                    isIntersecting: entry.isIntersecting,
-                    boundingRect: entry.boundingClientRect
+                // Get container bounds
+                const containerRect = scrollContainer.getBoundingClientRect();
+                const rect = entry.boundingClientRect;
+                
+                // Calculate visibility relative to container instead of window
+                const containerVisibleTop = containerRect.top;
+                const containerVisibleBottom = containerRect.bottom;
+                
+                const isAboveContainer = rect.bottom < containerVisibleTop;
+                const isBelowContainer = rect.top > containerVisibleBottom;
+                
+                // Calculate visible height relative to container
+                const visibleHeight = Math.min(rect.bottom, containerVisibleBottom) - 
+                                    Math.max(rect.top, containerVisibleTop);
+                const percentVisible = (visibleHeight / rect.height) * 100;
+
+                console.log(`Carousel ${carouselId} visibility:`, {
+                    percentVisible: Math.round(percentVisible),
+                    isAboveContainer,
+                    isBelowContainer,
+                    containerBounds: {
+                        top: Math.round(containerVisibleTop),
+                        bottom: Math.round(containerVisibleBottom),
+                        height: Math.round(containerRect.height)
+                    },
+                    elementBounds: {
+                        top: Math.round(rect.top),
+                        bottom: Math.round(rect.bottom),
+                        height: Math.round(rect.height)
+                    }
                 });
 
-                if (intersectionRatio > 0.3) {
+                // Show markers if carousel is significantly visible in container
+                if (!isAboveContainer && !isBelowContainer && percentVisible > 50) {
                     component._markerManager.showMarkers();
                 } else {
                     component._markerManager.hideMarkers();
                 }
             });
         }, {
-            root: scrollContainer,
-            threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+            root: scrollContainer,  // Use the scroll container as root
+            threshold: [0, 0.5, 1],
             rootMargin: '0px'
         });
 
-        // Observe the carousel headers
-        const headers = document.querySelectorAll('.flex[data-carousel-id]');
-        headers.forEach(header => {
-            this._intersectionObserver.observe(header);
+        // Observe all carousel containers
+        const containers = document.querySelectorAll('[id$="-container"]');
+        containers.forEach(container => {
+            console.log('Observing container:', container.id);
+            this._intersectionObserver.observe(container);
         });
+    }
+
+    _expandAllCarousels() {
+        const location = locationService.getUserLocationCached();
+        if (location) {
+            this._carousels.forEach((component, id) => {
+                console.log(`Expanding carousel: ${id}`);
+                component._handleHeaderClick(true);
+            });
+        }
     }
 
     // Clean up when page changes

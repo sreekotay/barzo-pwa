@@ -107,6 +107,8 @@ class MapService {
         // Subscribe to map location updates
         this._mapLocationUnsubscribe = this._locationService.onMapLocationChange(
             async (mapLocation) => {
+                if (!this._map) return;
+                
                 // Update marker
                 this._updateMapMarker(mapLocation);
                 

@@ -16,6 +16,7 @@ export default class MarkerManager {
             closed: '#9CA3AF',
             pulse: '#E31C5F'
         };
+        this._visible = false; // Add visibility tracking
     }
 
     // Add or update markers
@@ -191,12 +192,14 @@ export default class MarkerManager {
         this._markers.forEach(marker => {
             marker.remove();
         });
+        this._visible = false;
     }
 
     showMarkers() {
         this._markers.forEach(marker => {
             marker.addTo(this._mapService.getMap());
         });
+        this._visible = true;
     }
 
     // Add new method to get bounds of current markers
@@ -236,5 +239,10 @@ export default class MarkerManager {
             this._popup.remove();
             this._popup = null;
         }
+    }
+
+    // Add isVisible method
+    isVisible() {
+        return this._visible;
     }
 }

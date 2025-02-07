@@ -52,6 +52,9 @@ export default class PlacesComponent {
             return;
         }
 
+        // Ensure container has minimum height
+        this._container.style.minHeight = '100px';
+
         // Get component name from container ID for logging
         const componentName = this._containerSelector.replace('#', '').replace('-container', '');
 
@@ -266,17 +269,20 @@ export default class PlacesComponent {
         }
 
         try {
-            const radius = this._calculateRadius() * 2 / 3;
+            // Calculate radius but cap it at 10km (10000m) for Radar API
+            const calculatedRadius = this._calculateRadius() * 2 / 3;
+            const radius = Math.min(Math.floor(calculatedRadius / 100) * 100, 10000);
+            
             const roundedLocation = {
                 lat: Math.round(location.lat * 10000) / 10000,
                 lng: Math.round(location.lng * 10000) / 10000
             };
 
             // Build URL with all parameters including keywords
-            const url = new URL(`${PLACES_API_URL}/nearby?detailLevel=full`);
+            const url = new URL(`${PLACES_API_URL}/nearby?detailLevel=basic`);
             url.searchParams.set('lat', roundedLocation.lat);
             url.searchParams.set('lng', roundedLocation.lng);
-            url.searchParams.set('radius', Math.floor(radius / 100) * 100);
+            url.searchParams.set('radius', radius);  // Now using capped radius
             url.searchParams.set('type', this._config.placeTypes[0]);
             
             // Add keywords if they exist in config
@@ -286,6 +292,8 @@ export default class PlacesComponent {
                 });
             }
 
+            console.log('Fetching places with radius:', radius, 'meters');
+            
             const response = await fetch(url.toString(), {
                 headers: {
                     'X-API-Key': 'TESTING_KEY_wNTrO9zYD8cU__Pzmbs0fid80_EIqzhp7tW_FCpADDo',
