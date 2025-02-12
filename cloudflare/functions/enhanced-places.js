@@ -718,7 +718,7 @@ export default {
             const detailLevel = url.searchParams.get('detailLevel') || 'full';
             const type = url.searchParams.get('type');
             const keywords = url.searchParams.getAll('keyword');
-            const limit = parseInt(url.searchParams.get('limit') || '10');
+            const limit = parseInt(url.searchParams.get('limit') || 20);
 
             console.log('Search params:', {
                 lat,

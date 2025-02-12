@@ -127,11 +127,7 @@ export default class SocialPage {
         // Reset pagination when search changes
         this.currentPage = 0;
         this.hasMore = true;
-        const resultsContainer = document.getElementById('social-results');
-        if (resultsContainer) {
-            resultsContainer.innerHTML = ''; // Clear existing results
-        }
-
+        
         // If clearing search, force a full reset
         if (!query.trim() && this._lastQuery) {
             this._lastQuery = null;
@@ -143,12 +139,17 @@ export default class SocialPage {
                 .order('created_at', { ascending: false })
                 .range(0, this.pageSize - 1);
 
-            if (!error && resultsContainer) {
-                this.hasMore = personas.length === this.pageSize;
-                resultsContainer.innerHTML = this._renderPersonas(personas);
-                const loadMoreContainer = document.getElementById('load-more')?.parentElement;
-                if (loadMoreContainer) {
-                    loadMoreContainer.innerHTML = this._renderLoadMoreButton();
+            if (!error) {
+                const resultsContainer = document.getElementById('social-results');
+                if (resultsContainer) {
+                    this.hasMore = personas.length === this.pageSize;
+                    // Generate content before clearing
+                    const newContent = this._renderPersonas(personas);
+                    resultsContainer.innerHTML = newContent;
+                    const loadMoreContainer = document.getElementById('load-more')?.parentElement;
+                    if (loadMoreContainer) {
+                        loadMoreContainer.innerHTML = this._renderLoadMoreButton();
+                    }
                 }
             }
             return;
@@ -186,10 +187,6 @@ export default class SocialPage {
         }
 
         try {
-            if (this.currentPage === 0) {
-                resultsContainer.innerHTML = this._renderLoadingSpinner();
-            }
-
             if (query.trim()) {
                 // Handle search
                 this._lastQuery = query;
@@ -200,13 +197,24 @@ export default class SocialPage {
                 });
 
                 if (!personas.length) {
-                    resultsContainer.innerHTML = this._renderNoResults(query);
+                    // Only show no results if this is the first page and there's no existing content
+                    if (this.currentPage === 0 && !resultsContainer.children.length) {
+                        resultsContainer.innerHTML = this._renderNoResults(query);
+                    }
                     return;
                 }
 
                 // Hide load more button during search
                 this.hasMore = false;
-                resultsContainer.innerHTML = this._renderPersonas(personas);
+                
+                // Generate new content before clearing old content
+                const newContent = this._renderPersonas(personas);
+                if (this.currentPage === 0) {
+                    resultsContainer.innerHTML = newContent;
+                } else {
+                    resultsContainer.insertAdjacentHTML('beforeend', newContent);
+                }
+
                 const loadMoreContainer = document.getElementById('load-more')?.parentElement;
                 if (loadMoreContainer) {
                     loadMoreContainer.innerHTML = '';
@@ -222,22 +230,27 @@ export default class SocialPage {
 
                 if (error) throw error;
 
-                this.hasMore = personas.length === this.pageSize;
-                
-                if (this.currentPage === 0) {
-                    resultsContainer.innerHTML = this._renderPersonas(personas);
-                } else {
-                    resultsContainer.insertAdjacentHTML('beforeend', this._renderPersonas(personas));
-                }
-                
-                const loadMoreContainer = document.getElementById('load-more')?.parentElement;
-                if (loadMoreContainer) {
-                    loadMoreContainer.innerHTML = this._renderLoadMoreButton();
+                if (personas.length > 0) {
+                    this.hasMore = personas.length === this.pageSize;
+                    const newContent = this._renderPersonas(personas);
+                    
+                    if (this.currentPage === 0) {
+                        resultsContainer.innerHTML = newContent;
+                    } else {
+                        resultsContainer.insertAdjacentHTML('beforeend', newContent);
+                    }
+                    
+                    const loadMoreContainer = document.getElementById('load-more')?.parentElement;
+                    if (loadMoreContainer) {
+                        loadMoreContainer.innerHTML = this._renderLoadMoreButton();
+                    }
                 }
             }
         } catch (error) {
             console.error('Error loading results:', error);
-            resultsContainer.innerHTML = this._renderError('Error loading results:', error.message);
+            if (this.currentPage === 0 && !resultsContainer.children.length) {
+                resultsContainer.innerHTML = this._renderError('Error loading results:', error.message);
+            }
         }
     }
 

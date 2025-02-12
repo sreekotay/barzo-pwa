@@ -23,8 +23,78 @@ export default class PlaceDetailsPage {
             </div>
         `;
     }
+    static updateOpenNowStatus(place) {
+        if (!place?.opening_hours?.periods) {
+            delete place.opening_hours;
+            delete place.current_opening_hours;
+            return place;
+        }
+    
+        // Use place's UTC offset instead of hardcoding EST
+        const now = new Date();
+        const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+        const localTime = new Date(utc + ((place.utc_offset || -5) * 3600000)); // Fixed: hours to ms conversion
+    
+        const dayOfWeek = localTime.getDay();
+        const currentMinutes = localTime.getHours() * 60 + localTime.getMinutes();
+    
+        // Check if it's open 24/7
+        if (place.opening_hours.periods.length === 1 && 
+            place.opening_hours.periods[0].open.time === "0000" && 
+            !place.opening_hours.periods[0].close) {
+            place.opening_hours.open_now = true;
+            if (place.current_opening_hours) {
+                place.current_opening_hours.open_now = true;
+            }
+            return place;
+        }
+    
+        let isOpen = false;
+        for (const period of place.opening_hours.periods) {
+            const openDay = period.open.day;
+            const closeDay = period.close?.day ?? openDay;
+            
+            // Convert HHMM format to minutes since midnight
+            const openMinutes = parseInt(period.open.time.slice(0, 2)) * 60 + 
+                               parseInt(period.open.time.slice(2));
+            const closeMinutes = period.close ? 
+                                parseInt(period.close.time.slice(0, 2)) * 60 + 
+                                parseInt(period.close.time.slice(2)) : 
+                                24 * 60;
+    
+            // Handle cases where closing time is on the next day
+            if (openDay === dayOfWeek) {
+                if (closeDay === openDay) {
+                    // Same day period
+                    if (currentMinutes >= openMinutes && currentMinutes < closeMinutes) {
+                        isOpen = true;
+                        break;
+                    }
+                } else {
+                    // Period extends to next day
+                    if (currentMinutes >= openMinutes) {
+                        isOpen = true;
+                        break;
+                    }
+                }
+            } else if (closeDay === dayOfWeek) {
+                // Check if we're in the closing leg of an overnight period
+                if (currentMinutes < closeMinutes) {
+                    isOpen = true;
+                    break;
+                }
+            }
+        }
+    
+        place.opening_hours.open_now = isOpen;
+        if (place.current_opening_hours) {
+            place.current_opening_hours.open_now = isOpen;
+        }
+    
+        return place;
+    }
 
-    async getPlaceDetails(placeId) {
+    static async getPlaceDetails(placeId) {
         try {
             const response = await fetch(`${PLACES_API_URL}/nearby-places?placeId=${placeId}`, {
                 headers: {
@@ -44,7 +114,9 @@ export default class PlaceDetailsPage {
                 throw new Error(errorData.error || errorData.message || 'Failed to fetch place details');
             }
 
-            return await response.json();
+            let data = await response.json();
+            this.updateOpenNowStatus(data.result || data)
+            return data;
         } catch (error) {
             console.error('Error fetching place details:', error);
             throw error;
@@ -90,7 +162,7 @@ export default class PlaceDetailsPage {
         }
 
         // Fetch the detailed place data first
-        let details = await this.getPlaceDetails(placeId);
+        let details = await PlaceDetailsPage.getPlaceDetails(placeId);
         if (!details) {
             console.error('Failed to fetch place details');
             return;

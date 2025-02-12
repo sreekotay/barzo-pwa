@@ -26,18 +26,6 @@ const VALID_TRANSITIONS = {
   owner: ['blocked', 'muted', 'manager']
 }
 
-/**
- * Helper function to get CDN URL for images
- * @param {string} url - Original image URL
- * @returns {string} CDN optimized URL
- */
-function cdnizeUrl(url) {
-    if (!url) return '/default-avatar.png';
-    if (url.startsWith('http')) {
-        return `https://cdn.barzo.com/cdn-cgi/image/width=96,height=96,fit=cover,quality=80,format=auto/${url}`;
-    }
-    return url;
-}
 
 /**
  * Service for managing social relationships and interactions
