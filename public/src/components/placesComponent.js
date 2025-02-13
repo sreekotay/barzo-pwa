@@ -619,8 +619,7 @@ export default class PlacesComponent {
                                             this._currentIntersectionObserver.observe(updatedCard);
                                         }
                                     } catch (error) {
-                                        console.error('Error fetching place det
-                                            ails:', error);
+                                        console.error('Error fetching place details:', error);
                                     }
                                 }
                             }
