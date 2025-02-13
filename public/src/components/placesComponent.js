@@ -1,6 +1,7 @@
 import MarkerManager from '../services/markerManager.js';
 import CarouselComponent from './carouselComponent.js';
 import { getApiUrl } from '../services/apiService.js';
+import PlaceDetailsPage from '../pages/placeDetailsPage.js';
 
 const PLACES_API_URL = getApiUrl();
 //const PLACES_API_URL = 'http://localhost:8787'; // debug
@@ -445,53 +446,28 @@ export default class PlacesComponent {
         const container = this._getContainer();
         if (!container) return;
 
-        if (!places?.length) {// this needs to be debugged - do not remove the no places message
-          /*  container.innerHTML = ` 
-                <div class="no-places-message">
-                    No places found nearby
-                </div>
-            `;*/
-           // this._carousel.collapse();*/  //if thise runs somehow we get unsubscribed from the location service
-            //return;
-        } else {
-            // Remove the "no places" message if it exists
-            const noPlacesMessage = container.querySelector('.no-places-message');
-            if (noPlacesMessage) {
-                noPlacesMessage.remove();
-            }
-
+        if (!places?.length) {
+            // Keep existing content if no places yet
+            return;
         }
 
-
+        // Store new places data
         this._currentPlaces = places;
         let placesScroll = this._carousel.getOrCreateScrollContainer();
 
-        // Get existing cards and create a map of placeId -> card
-        const existingCards = new Map();
-        placesScroll.querySelectorAll('.place-card').forEach(card => {
-            existingCards.set(card.dataset.placeId, card);
-        });
-
-        // Update or create cards
+        // Create new cards
         places.forEach(place => {
-            let card = existingCards.get(place.place_id);
-            if (card) {
-                this._updatePlaceCard(card, place);
-                existingCards.delete(place.place_id);
-            } else {
-                card = this._createPlaceCard(place);
+            const existingCard = placesScroll.querySelector(`[data-place-id="${place.place_id}"]`);
+            if (!existingCard) {
+                const card = this._createPlaceCard(place);
                 placesScroll.appendChild(card);
             }
         });
-
-        // Remove any cards that weren't reused
-        existingCards.forEach(card => card.remove());
 
         // Update observers and event handlers
         this._setupCardObserversAndHandlers(placesScroll);
 
         // Only expand if we have places and this wasn't from a header click
-        // (header click expansion is handled in _fetchNearbyPlaces)
         if (places.length > 0 && !fromHeaderClick) {
             this._carousel.expand();
         }
@@ -521,21 +497,26 @@ export default class PlacesComponent {
                 </div>
             ` : ''}
             <div class="flex-1 px-2 pb-2">
-                <div class="types-scroll nowrap body"></div>
-                <h3 class="name" _style="position: absolute; top: 8px; left: 0; right:0; padding: 2px 2px; 
-                                        background: linear-gradient(90deg, rgba(255,255,255,1), rgba(255,255,255,0));"
-                                        style="position:relative; top:-2px"
-                                        ></h3>
-                <div class="flex" style="align-items: baseline;" >
-                    <div class="status"></div>
-                    <div class="price-level text-gray-500 text-xs ml-2"></div>
+                <div class="types-scroll nowrap body">
+                    ${(place.types || [])
+                        .filter(type => !['point_of_interest', 'establishment'].includes(type))
+                        .map((type, index, array) => `
+                            <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>${index < array.length - 1 ? '<span class="text-gray-300"> | </span>' : ''}
+                        `).join('')}
+                </div>
+                <h3 class="name" style="position:relative; top:-2px">${place.name}</h3>
+                <div class="flex" style="align-items: baseline;">
+                    <div class="status ${place.opening_hours ? `pc-status ${place.opening_hours.open_now ? 'open' : 'closed'}` : ''}">
+                        ${place.opening_hours ? (place.opening_hours.open_now ? 'OPEN' : 'CLOSED') : '...'}
+                    </div>
+                    <div class="price-level text-gray-500 text-xs ml-2">
+                        ${place.price_level ? '$'.repeat(place.price_level) : ''}
+                    </div>
                     <div class="flex-1"></div>
-                    <div class="text-gray-500 text-xs pr-1"></div>
+                    <div class="text-gray-500 text-xs pr-1">${place.formattedDistance || ''}</div>
                 </div>
             </div>
         `;
-
-        this._updatePlaceCard(card, place);
 
         // Add click handler for place details
         card.addEventListener('click', (e) => {
@@ -559,75 +540,6 @@ export default class PlacesComponent {
         }
 
         return card;
-    }
-
-    _updatePlaceCard(card, place) {
-        // Add custom property for highlight color
-        card.style.setProperty('--highlight-color', this._config.markerColors.open);
-
-        // Update photo if it exists
-        const existingImage = card.querySelector('.place-image img');
-        if (place.photos && place.photos.length > 0) {
-            const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${this.serverKey || this._mapService._googleApiKey}`;
-            if (existingImage) {
-                if (existingImage.src !== photoUrl) {
-                    existingImage.src = photoUrl;
-                }
-            } else {
-                const imageDiv = document.createElement('div');
-                imageDiv.className = 'place-image';
-                imageDiv.innerHTML = `<img src="${photoUrl}" alt="${place.name}" loading="lazy">`;
-                card.insertBefore(imageDiv, card.firstChild);
-            }
-        } else if (existingImage) {
-            existingImage.parentElement.remove();
-        }
-
-        // Update types
-        const typesDiv = card.querySelector('.types-scroll');
-        const types = (place.types || [])
-            .filter(type => !['point_of_interest', 'establishment'].includes(type))
-            .map((type, index, array) => `
-                <span class="text-gray-500 text-xs">${type.replace(/_/g, ' ')}</span>${index < array.length - 1 ? '<span class="text-gray-300"> | </span>' : ''}
-            `).join('');
-        if (typesDiv) {
-            typesDiv.innerHTML = types;
-        }
-
-        // Update name
-        const nameEl = card.querySelector('.name');
-        if (nameEl) {
-            nameEl.textContent = place.name;
-        }
-
-        // Update status
-        const statusEl = card.querySelector('.status');
-        if (statusEl) {
-            if ('opening_hours' in place) {
-                statusEl.className = `body pc-status ${place.opening_hours?.open_now ? 'open' : 'closed'}`;
-                statusEl.textContent = place.opening_hours?.open_now ? 'OPEN' : 'CLOSED';
-            } else {
-                statusEl.textContent = '';
-            }
-        }
-
-        // Update price level
-        const priceEl = card.querySelector('.price-level');
-        if (priceEl) {
-            priceEl.textContent = place.price_level ? '$'.repeat(place.price_level) : '';
-        }
-
-        // Update distance
-        const distanceEl = card.querySelector('.text-gray-500.text-xs.pr-1');
-        if (distanceEl) {
-            distanceEl.textContent = place.formattedDistance;
-        }
-
-        // Re-add click handler
-        card.onclick = (e) => {
-            e.preventDefault();
-            this.handlePlaceClick(place);
-        };
     }
 
     _scrollCardIntoView(placeId) {
@@ -659,23 +571,24 @@ export default class PlacesComponent {
         }, 100);
     }
 
+    
     _setupCardObserversAndHandlers(placesScroll) {
         // Disconnect any existing observer
         if (this._currentIntersectionObserver) {
             this._currentIntersectionObserver.disconnect();
         }
-
+    
         // Only set up intersection observer on mobile
         if (this._carousel.isMobile()) {
             // Create new observer
             this._currentIntersectionObserver = new IntersectionObserver(
-                (entries) => {
+                async (entries) => {
                     // Only process if carousel is expanded
                     if (!this._carousel._isExpanded) {
                         return;
                     }
-
-                    entries.forEach(entry => {
+    
+                    for (const entry of entries) {
                         const card = entry.target;
                         const placeId = card.dataset.placeId;
                         
@@ -684,6 +597,32 @@ export default class PlacesComponent {
                             if (this._carousel._isExpanded) {
                                 this._markerManager.selectMarker(placeId);
                                 this._carousel.selectCard(placeId);
+
+                                // Find the place in currentPlaces
+                                const place = this._currentPlaces.find(p => p.place_id === placeId);
+                                
+                                // Check if we only have basic details
+                                if (place && !place.detailsFetched) {
+                                    try {
+                                        // Use PlaceDetailsPage.getPlaceDetails instead of direct fetch
+                                        const details = await PlaceDetailsPage.getPlaceDetails(placeId);
+                                        if (details) {
+                                            // Update the place in currentPlaces with full details
+                                            Object.assign(place, details.result);
+                                            place.detailsFetched = true;
+
+                                            // Update the card with new details
+                                            const updatedCard = this._createPlaceCard(place);
+                                            card.replaceWith(updatedCard);
+                                            
+                                            // Re-observe the new card
+                                            this._currentIntersectionObserver.observe(updatedCard);
+                                        }
+                                    } catch (error) {
+                                        console.error('Error fetching place det
+                                            ails:', error);
+                                    }
+                                }
                             }
                         } else {
                             // When card scrolls out of view, remove highlight from both marker and card
@@ -693,20 +632,20 @@ export default class PlacesComponent {
                             }
                             this._carousel.clearSelection(placeId);
                         }
-                    });
+                    }
                 },
                 {
                     root: placesScroll,
                     threshold: 0.5
                 }
             );
-
+    
             // Observe all cards
             placesScroll.querySelectorAll('.place-card').forEach(card => {
                 this._currentIntersectionObserver.observe(card);
             });
         }
-
+    
         // For desktop, we'll rely on hover/click handlers which are already set up
     }
 
@@ -753,7 +692,7 @@ export default class PlacesComponent {
         }
 
         // Fetch the detailed place data first
-        const details = await this._fetchPlaceDetails(place.place_id);
+        const details = await PlaceDetailsPage.getPlaceDetails(place.place_id);
         if (!details) {
             console.error('Failed to fetch place details');
             return;
@@ -773,34 +712,6 @@ export default class PlacesComponent {
             ` : ''}
             <!-- Rest of the content -->
         `;
-    }
-
-    async _fetchPlaceDetails(placeId) {
-        try {
-            const response = await fetch(`${PLACES_API_URL}/nearby-places?placeId=${placeId}`, {
-                headers: {
-                    'X-API-Key': 'TESTING_KEY_wNTrO9zYD8cU__Pzmbs0fid80_EIqzhp7tW_FCpADDo',
-                    'Content-Type': 'application/json'
-                },
-                mode: 'cors'
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                console.error('Places Details API Error:', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    error: errorData
-                });
-                throw new Error(errorData.error || errorData.message || 'Failed to fetch place details');
-            }
-
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error('Error fetching place details:', error);
-            return null;
-        }
     }
 
     // Add method to update configuration

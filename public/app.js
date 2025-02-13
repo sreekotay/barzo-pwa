@@ -52,130 +52,180 @@ function jitterLocation(lat, lng, maxMeters) {
         lng: lng + lngOffset
     };
 }
-
 async function createMessageMarkers() {
     try {
-        // Debug session status
-        const { data: { session }, error: sessionError } = await mapService._supabase.auth.getSession();
-        console.log('Supabase Session:', {
-            exists: !!session,
-            error: sessionError,
-            user: session?.user,
-            token: session?.access_token?.slice(0, 20) + '...'
-        });
-
-        if (!session) {
-            console.error('No valid Supabase session');
-            return;
-        }
-
-        // Remove existing message markers layer if it exists
-        if (messageMarkersLayer) {
-            mapService._map.removeLayer(messageMarkersLayer);
-        }
-
-        // Fetch messages from Supabase and sort by latitude
-        const { data: messages, error } = await mapService._supabase
-            .from('messages')
-            .select('*');
-
-        if (error) {
-            console.error('Supabase query error:', error);
-            throw error;
-        }
-
-        if (!messages || messages.length === 0) {
-            console.log('No messages found - this might be an RLS issue');
-            return;
-        }
-
-        // Sort messages by latitude (north to south)
-        messages.sort((a, b) => b.latitude - a.latitude);
-
-        // Create GeoJSON features with jittered coordinates and varied weights
-        const features = messages.map(msg => {
-            const jittered = jitterLocation(msg.latitude, msg.longitude, 50);
-            return {
-                type: 'Feature',
-                geometry: {
-                    type: 'Point',
-                    coordinates: [jittered.lng, jittered.lat]
-                },
-                properties: {
-                    weight: Math.random() * 0.5 + 0.5
-                }
-            };
-        });
-
-        // Find the first symbol layer in the map style
-        const firstSymbolId = mapService._map.getStyle().layers.find(layer => layer.type === 'symbol').id;
-
-        // Add heatmap layer before the first symbol layer
-        messageMarkersLayer = mapService._map.addLayer({
-            id: 'messages-heat',
-            type: 'heatmap',
-            source: {
-                type: 'geojson',
-                data: {
-                    type: 'FeatureCollection',
-                    features: features
-                }
-            },
-            paint: {
-                // Nonlinear weight contribution
-                'heatmap-weight': [
-                    'interpolate',
-                    ['exponential', 2],  // Using exponential interpolation with base 2
-                    ['get', 'weight'],
-                    0, 0,
-                    0.2, 0.1,    // Low weights have minimal impact
-                    0.5, 0.4,    // Medium weights have moderate impact
-                    0.8, 0.8,    // Higher weights start to dominate
-                    1, 2         // Maximum weight has strong impact
-                ],
-                // Increase intensity as zoom level increases
-                'heatmap-intensity': [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    0, 1,
-                    9, 5
-                ],
-                // Cool green gradient for the heatmap - brighter colors
-                'heatmap-color': [
-                    'interpolate',
-                    ['linear'],
-                    ['heatmap-density'],
-                    0, 'rgba(255,255,255,0)',
-                    0.2, 'rgb(240,253,244)',  // Lightest green
-                    0.4, 'rgb(187,247,208)',  // Light green
-                    0.6, 'rgb(74,222,128)',   // Brighter medium green
-                    0.8, 'rgb(22,163,74)',    // Brighter green
-                    1, 'rgb(21,128,61)'       // Dark green
-                ],
-                // Adjust the heatmap radius by zoom level
-                'heatmap-radius': [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    0, 2,
-                    9, 16
-                ],
-                // Transition from heatmap to circle layer by zoom level
-                'heatmap-opacity': [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    7, 1,
-                    9, 0.7
-                ]
+      // Debug session status
+      const {
+        data: { session },
+        error: sessionError
+      } = await mapService._supabase.auth.getSession();
+      console.log('Supabase Session:', {
+        exists: !!session,
+        error: sessionError,
+        user: session?.user,
+        token: session?.access_token?.slice(0, 20) + '...'
+      });
+  
+      if (!session) {
+        console.error('No valid Supabase session');
+        return;
+      }
+  
+      // Remove existing message markers layer if it exists
+      if (messageMarkersLayer) {
+        mapService._map.removeLayer(messageMarkersLayer);
+      }
+  
+      // Fetch messages from Supabase and sort by latitude
+      const { data: messages, error } = await mapService._supabase
+        .from('messages')
+        .select('*');
+  
+      if (error) {
+        console.error('Supabase query error:', error);
+        throw error;
+      }
+  
+      if (!messages || messages.length === 0) {
+        console.log('No messages found - this might be an RLS issue');
+        return;
+      }
+  
+      // Sort messages by latitude (north to south)
+      messages.sort((a, b) => b.latitude - a.latitude);
+  
+      // Create GeoJSON features with jittered coordinates and varied weights
+      const features = messages.map((msg) => {
+        const jittered = jitterLocation(msg.latitude, msg.longitude, 50);
+        return {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: [jittered.lng, jittered.lat]
+          },
+          properties: {
+            weight: Math.random() * 0.5 + 0.5
+          }
+        };
+      });
+  
+      // Find the first symbol layer in the map style to insert our heatmap beneath it
+      const firstSymbolId = mapService._map.getStyle().layers.find(
+        (layer) => layer.type === 'symbol'
+      ).id;
+  
+      // Add heatmap layer with updated paint properties
+      messageMarkersLayer = mapService._map.addLayer(
+        {
+          id: 'messages-heat',
+          type: 'heatmap',
+          source: {
+            type: 'geojson',
+            data: {
+              type: 'FeatureCollection',
+              features: features
             }
-        }, firstSymbolId);  // Add this parameter to insert before symbols
-
+          },
+          paint: {
+            // Nonlinear weight contribution
+            'heatmap-weight': [
+              'interpolate',
+              ['exponential', 2],
+              ['get', 'weight'],
+              0,
+              0,
+              0.2,
+              0.1, // Low weights have minimal impact
+              0.5,
+              0.4, // Medium weights have moderate impact
+              0.8,
+              0.8, // Higher weights start to dominate
+              1,
+              2 // Maximum weight has strong impact
+            ],
+            // Initially set up intensity to interpolate with zoom.
+            // (This value will be updated in our animation loop.)
+            'heatmap-intensity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              1,
+              9,
+              5
+            ],
+            // Use a translucent red gradient for the heatmap:
+            'heatmap-color': [
+              'interpolate',
+              ['linear'],
+              ['heatmap-density'],
+              0,
+              'rgba(255, 0, 0, 0)',       // At zero density, fully transparent
+              0.2,
+              'rgba(255, 0, 0, 0.2)',      // Low density: very light red
+              0.4,
+              'rgba(255, 0, 0, 0.4)',      // Medium density: subtle red
+              0.6,
+              'rgba(255, 0, 0, 0.6)',      // More intense red
+              0.8,
+              'rgba(255, 0, 0, 0.8)',      // Almost fully red but still translucent
+              1,
+              'rgba(255, 0, 0, 0.8)'       // Highest density remains translucent red
+            ],
+            // Adjust the heatmap radius by zoom level
+            'heatmap-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              2,
+              9,
+              16
+            ],
+            // Transition from heatmap to circle layer by zoom level
+            'heatmap-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              7,
+              1,
+              9,
+              0.7
+            ]
+          }
+        },
+        firstSymbolId // Insert the heatmap below the first symbol layer
+      );
+  
+      // Animation loop: subtly pulse the heatmap by modulating its intensity
+      let startTime = performance.now();
+      function animateHeatmap() {
+        // Retrieve the current zoom level and clamp it between 0 and 9
+        const zoom = mapService._map.getZoom();
+        const clampedZoom = Math.max(0, Math.min(zoom, 9));
+        // Compute the base intensity based on zoom (1 at zoom 0, 5 at zoom 9)
+        const baseIntensity = 1 + (clampedZoom / 9) * 4;
+        // Calculate a subtle pulse factor (oscillates between ~0.9 and 1.1)
+        const pulse =
+          1 + 0.1 * Math.sin((performance.now() - startTime) / 500);
+        // Combine the base intensity with the pulse factor
+        const animatedIntensity = baseIntensity * pulse;
+        // Update the heatmap intensity with the animated value
+        mapService._map.setPaintProperty(
+          'messages-heat',
+          'heatmap-intensity',
+          animatedIntensity
+        );
+        // Request the next animation frame
+        requestAnimationFrame(animateHeatmap);
+      }
+      animateHeatmap();
+  
     } catch (error) {
-        console.error('Error creating message heatmap:', error);
+      console.error('Error creating message heatmap:', error);
     }
-}
+  }
+  
 
 async function userAuthInit() {
     const authToken = localStorage.getItem('authToken');
@@ -244,6 +294,8 @@ async function startupThisApp() {
     // Register callbacks before map initialization
     mapService.onPlacesChange((places) => {
         currentPlaces = places;
+        // Add this: Set up intersection observer after places update
+        //setupIntersectionObserver();
     });
 
     mapService.onMarkerClick((place) => {
@@ -308,7 +360,44 @@ async function startupThisApp() {
         router.handleRoute(path);
     });
 }
+/*
+// Add this function after startupThisApp
+function setupIntersectionObserver() {
+    // Disconnect existing observer if it exists
+    if (currentIntersectionObserver) {
+        currentIntersectionObserver.disconnect();
+    }
 
+    // Create new intersection observer
+    currentIntersectionObserver = new IntersectionObserver(
+        (entries) => {
+            if (isUpdating) return;
+
+            entries.forEach(entry => {
+                const placeId = entry.target.dataset.placeId;
+                if (entry.isIntersecting) {
+                    // When card comes into view
+                    mapService.pulseMarker(placeId);
+                    entry.target.dataset.selected = 'true';
+                } else {
+                    // When card leaves view
+                    mapService.stopPulseMarker(placeId);
+                    entry.target.dataset.selected = 'false';
+                }
+            });
+        },
+        {
+            root: document.querySelector('.places-container'),
+            threshold: 0.7 // Card must be 70% visible
+        }
+    );
+
+    // Observe all place cards
+    document.querySelectorAll('.place-card').forEach(card => {
+        currentIntersectionObserver.observe(card);
+    });
+}
+*/
 // Update the initialize function
 export async function initialize() {
     try {

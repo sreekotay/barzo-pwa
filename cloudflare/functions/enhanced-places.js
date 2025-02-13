@@ -27,7 +27,7 @@
  * 4. Handle proper timezone based on place location (currently assuming EST)
  */
 
-const API_VERSION = 'v1.2.9';  // Update: Added Radar categories, fallback place_id, and cache types
+const API_VERSION = 'v2.0.5';  // Update: Added Radar categories, fallback place_id, and cache types
 
 const CACHE_KEYS = {
     PREFIX: 'place',
@@ -61,77 +61,86 @@ const corsHeaders = {
     'Access-Control-Max-Age': '86400',
 };
 
-// Type to Radar categories (using only leaf categories from Radar's list)
-const TYPE_TO_RADAR_CATEGORIES = {
-    // Food & Beverage
-    'restaurant': ['restaurant'],
-    'cafe': ['cafe'],
-    'bar': ['bar', 'brewery'],
-    'night_club': ['night-club'],
-    'bakery': ['bakery'],
-    'grocery_or_supermarket': ['supermarket'],
-    'convenience_store': ['convenience-store'],
-    'liquor_store': ['liquor-store'],
-    
-    // Shopping & Retail
-    'clothing_store': ['clothing-store'],
-    'shoe_store': ['shoe-store'],
-    'jewelry_store': ['jewelry-store'],
-    'shopping_mall': ['shopping-mall'],
-    'department_store': ['department-store'],
-    'electronics_store': ['electronics-store'],
-    'furniture_store': ['furniture-store'],
-    // Entertainment & Recreation
-    'movie_theater': ['movie-theatre'],
-    'casino': ['casino'],
-    'bowling_alley': ['bowling-alley'],
-    'gym': ['gym'],
-    
-    // Services
-    'beauty_salon': ['beauty-salon', 'hair-salon'],
-    'hair_care': ['hair-salon'],
-    'spa': ['spa']
-};
 
-// Keyword to Radar categories (using only leaf categories)
-const KEYWORD_TO_RADAR_CATEGORIES = {
-    'pizza': ['pizza-place'],
-    'sushi': ['sushi-restaurant'],
-    'coffee': ['cafe', 'coffee-shop'],
-    'ice cream': ['ice-cream-parlor'],
-    'brewery': ['brewery'],
-    'wine': ['wine-bar', 'winery'],
-    'sports': ['sports-bar'],
-    'thai': ['thai-restaurant'],
-    'chinese': ['chinese-restaurant'],
-    'mexican': ['mexican-restaurant']
-};
+// Update findGooglePlacesByName to add detailed logging
+const PLACE_DETAIL_FIELDS_DETAILS = [
+    "accessibilityOptions",
+    "addressComponents",
+    "adrFormatAddress",
+    "businessStatus",
+    "curbsidePickup",
+    "currentOpeningHours",
+    "currentSecondaryOpeningHours",
+    "delivery",
+    "dineIn",
+    "displayName",
+    "editorialSummary",
+    "formattedAddress",
+    "googleMapsUri",
+    "iconBackgroundColor",
+    "iconMaskBaseUri",
+    "id",
+    "internationalPhoneNumber",
+    "location",
+    "name",
+    "nationalPhoneNumber",
+    "parkingOptions",
+    "paymentOptions",
+    "photos",
+    "plusCode",
+    "priceLevel",
+    "primaryType",
+    "rating",
+    "regularOpeningHours",
+    "reservable",
+    "servesBeer",
+    "servesBreakfast",
+    "servesBrunch",
+    "servesDinner",
+    "servesLunch",
+    "servesVegetarianFood",
+    "servesWine",
+    "takeout",
+    "types",
+    "userRatingCount",
+    "utcOffsetMinutes",
+    "viewport",
+    "websiteUri",
+    "allowsDogs",
+    "curbsidePickup",
+    "delivery",
+    "dineIn",
+    "editorialSummary",
+    "evChargeOptions",
+    "fuelOptions",
+    "goodForChildren",
+    "goodForGroups",
+    "goodForWatchingSports",
+    "liveMusic",
+    "menuForChildren",
+    "parkingOptions",
+    "paymentOptions",
+    "outdoorSeating",
+    "reservable",
+    "restroom",
+    "servesBeer",
+    "servesBreakfast",
+    "servesBrunch",
+    "servesCocktails",
+    "servesCoffee",
+    "servesDessert",
+    "servesDinner",
+    "servesLunch",
+    "servesVegetarianFood",
+    "servesWine",
+    "takeout"
+    ].sort(); // Sort for consistent ordering
 
-// At the top with other constants
-const PLACE_DETAIL_FIELDS = [
-    'place_id',
-    'name', 
-    'geometry',
-    'formatted_address',
-    'formatted_phone_number',
-    'website',
-    'opening_hours',
-    'current_opening_hours',
-    'price_level',
-    'types',
-    'rating',
-    'user_ratings_total',
-    'editorial_summary',
-    'serves_breakfast',
-    'serves_lunch',
-    'serves_dinner',
-    'serves_brunch',
-    'photos',
-    'utc_offset'  // Add UTC offset for proper timezone handling
-].sort(); // Sort for consistent ordering
+const PLACE_DETAIL_FIELDS_NEW = PLACE_DETAIL_FIELDS_DETAILS.map(s=>`places.${s}`)
+  
 
 // Simple hash function
-const FIELDS_HASH = PLACE_DETAIL_FIELDS.join(',').split('').reduce((hash, char) => {
+const FIELDS_HASH = PLACE_DETAIL_FIELDS_NEW.join(',').split('').reduce((hash, char) => {
     return ((hash << 5) - hash) + char.charCodeAt(0) | 0;
 }, 0).toString(36);
 
@@ -143,7 +152,7 @@ const CACHE_TTL = {
     NEARBY: 60 * 60 * 24 * 7     // 1 week for nearby search results
 };
 
-function getRadarCacheKey(params, derivedCategories) {
+function getNearbyCacheKey(params) {
     const precision = GRID.getCoordinatePrecision(params.radius);
     const roundedLat = Number(params.lat).toFixed(precision);
     const roundedLng = Number(params.lng).toFixed(precision);
@@ -151,98 +160,59 @@ function getRadarCacheKey(params, derivedCategories) {
     const limit = params.limit || 20;
 
     // Use derived categories instead of input params
-    const categoriesStr = `:cats=${derivedCategories.sort().join('+')}`;
     const limitStr = `:limit=${limit}`;
+    const keywordsStr = `:keywords=${(params.keywords||[]).join(',')}`;
+    const typeStr = `:type=${(params.type||'').toLowerCase()}`;
 
-    return `${API_VERSION}:radar:${roundedLat},${roundedLng}:${roundedRadius}${categoriesStr}${limitStr}`;
+    return `${API_VERSION}:radar:${roundedLat},${roundedLng}:${roundedRadius}${keywordsStr}${typeStr}${limitStr}`;
 }
 
-async function searchRadarPlaces(params, radarKey, env) {
-    // Determine categories first
-    let categories;
-    let unmapped = {
-        keywords: [],
-        types: []
-    };
+async function fillNearbyPlaces(results, env) {
+    if (!results?.nearby) return results;
+    results.nearby = await Promise.all(results.nearby.map(async (result) => {
+        return await getPlaceDetailsCached({
+            placeId:result.id, googleKey:env.GOOGLE_PLACES_API_KEY, detailLevel:'full', cacheOnly:true
+        }, env) || result
+    }));
 
-    if (params.keywords?.length > 0) {
-        const keywordCategories = params.keywords.flatMap(keyword => 
-            KEYWORD_TO_RADAR_CATEGORIES[keyword] || []
-        );
-        categories = keywordCategories.length > 0 ? 
-            [...new Set(keywordCategories)] : ['food-beverage'];
+    let counter = 0, max = 5;
+    results.nearby = await Promise.all(results.nearby.map(async (result) => {
+        if (result.name || counter++ >= max) return result;
+        const r = await getPlaceDetailsCached({
+            placeId:result.id, googleKey:env.GOOGLE_PLACES_API_KEY, detailLevel:'full'
+        }, env)
+        return r
+    }));
+    return results;
+}
 
-        // Track unmapped keywords
-        unmapped.keywords = params.keywords.filter(k => !KEYWORD_TO_RADAR_CATEGORIES[k]);
-    } else {
-        const typeCategories = params.type ? 
-            TYPE_TO_RADAR_CATEGORIES[params.type] || [] : [];
-        categories = typeCategories.length > 0 ? 
-            typeCategories : ['food-beverage'];
-
-        // Track unmapped type
-        if (params.type && !TYPE_TO_RADAR_CATEGORIES[params.type]) {
-            unmapped.types.push(params.type);
-        }
-    }
-
-    const cacheKey = getRadarCacheKey(params, categories);
-    
+async function getNearbyPlacesCached({type, keywords, lat, lng, radius}, env) {
+    const cacheKey = getNearbyCacheKey({type, keywords, lat, lng, radius});
     try {
         const cached = await env.PLACES_KV.get(cacheKey);
         if (cached) {
             const results = JSON.parse(cached);
-            return {
-                places: results.radar,  // Raw radar places
-                categories: results.categories,
-                unmapped: results.unmapped
-            };
+            return fillNearbyPlaces({
+                nearby_cache_hit: true,
+                nearby: results.nearby  // Raw radar places
+            }, env);
         }
     } catch (error) {
         console.error('Cache read error:', error);
     }
 
-    // If not in cache, do the search
-    const searchParams = new URLSearchParams({
-        near: `${params.lat},${params.lng}`,
-        radius: params.radius,
-        limit: params.limit || 20,
-        categories: categories.join(',')
-    });
-
-    console.log('Radar cache miss, fetching with params:', {
-        cacheKey,
-        categories,
-        from: {
-            type: params.type,
-            keywords: params.keywords
-        }
-    });
-
-    const response = await fetch(`https://api.radar.io/v1/search/places?${searchParams}`, {
-        headers: {
-            'Authorization': `${radarKey}`
-        }
-    });
-
-    if (!response.ok) {
-        const data = await response.json();
-        throw new Error(`Radar API error: ${response.status} - ${JSON.stringify(data)}`);
-    }
-
-    const data = await response.json();
-    const places = data.places || [];
+    const nearby = await findGooglePlacesByName({
+                    name:keywords.join(), lat, lng, radius, 
+                    detailLevel:'basic', 
+                    googleKey:env.GOOGLE_PLACES_API_KEY
+                });
 
     // Cache the raw Radar results
     try {
         const cacheData = {
-            radar: places,  // Store raw radar places
-            categories,
-            unmapped,
+            nearby,  // Store raw radar places
             metadata: {
-                lat: params.lat,
-                lng: params.lng,
-                radius: params.radius,
+                type, keywords, lat, lng, radius,
                 timestamp: new Date().toISOString()
             }
         };
@@ -250,367 +220,66 @@ async function searchRadarPlaces(params, radarKey, env) {
         await env.PLACES_KV.put(cacheKey, JSON.stringify(cacheData), {
             expirationTtl: CACHE_TTL.RADAR
         });
-        console.log('Cached raw Radar results for:', cacheKey);
 
-        // Still cache basic details for each place
-        await Promise.all(places.map(async place => {
-            const basicCacheKey = `${API_VERSION}:${CACHE_KEYS.PREFIX}:${place._id}:${CACHE_KEYS.LEVELS.BASIC}`;
-            const basicDetails = await getUncachedGooglePlace(place, detailLevel, env.GOOGLE_PLACES_API_KEY);
-            await env.PLACES_KV.put(basicCacheKey, JSON.stringify(basicDetails), {
-                expirationTtl: CACHE_TTL.BASIC
-            });
-        }));
     } catch (error) {
         console.error('Cache write error:', error);
     }
 
-    return {
-        places,          // Return raw places for processing
-        categories,
-        unmapped
-    };
+    return fillNearbyPlaces({
+        nearby          // Return raw places for processing
+    }, env);
 }
 
-// Update findGooglePlace to add detailed logging
-async function findGooglePlace(radarPlace, detailLevel, googleKey) {
-    console.log("findGooglePlace called for:", {
-        placeName: radarPlace.name,
-        detailLevel,
-        coordinates: radarPlace.location.coordinates,
-        requestedFields: detailLevel === CACHE_KEYS.LEVELS.BASIC ? 
-            'place_id' : 
-            PLACE_DETAIL_FIELDS.join(',')
+async function findGooglePlacesById({placeId, googleKey}) {
+    const findUrl = `https://places.googleapis.com/v1/places/${placeId}`;
+    const findResponse = await fetch(findUrl, {
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': googleKey,
+            'X-Goog-FieldMask': PLACE_DETAIL_FIELDS_DETAILS.join(',')
+        }
     });
+    const findData = await findResponse.json();
+    if (!findData?.id) {
+        console.log(`No Google Place match found for: ${placeId}`);
+        return null;
+    }
+    return updateOpenNowStatus(findData);
+}
 
-    const fields = detailLevel === CACHE_KEYS.LEVELS.BASIC ? 
-        'place_id' : 
-        PLACE_DETAIL_FIELDS.join(',');
-
-    const [lng, lat] = radarPlace.location.coordinates;
-    
+async function findGooglePlacesByName({name, lat, lng, radius, detailLevel, googleKey, type}) {    
     // First try to find the place
-    const findParams = new URLSearchParams({
-        input: `${radarPlace.name} ${radarPlace.formattedAddress || ''}`.trim(),
-        inputtype: 'textquery',
-        locationbias: `point:${lat},${lng}`,
-        key: googleKey,
-        fields: 'place_id'  // Only get place_id in find request
+    const requestBody = {textQuery: `${name || ''}`.trim()};
+    if (lat && lng) requestBody.locationBias = {circle: {center: {latitude: lat, longitude: lng}, radius: radius ? 50.0 : 500.0}};
+    if (type) requestBody.includeType = type;
+
+    const findUrl = 'https://places.googleapis.com/v1/places:searchText';
+    const findResponse = await fetch(findUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': googleKey,
+            'X-Goog-FieldMask': detailLevel === CACHE_KEYS.LEVELS.BASIC && 1 ? 
+                'places.id,nextPageToken' : 
+                PLACE_DETAIL_FIELDS_NEW.join(',')
+        },
+        body: JSON.stringify(requestBody)
     });
 
-    try {
-        const findUrl = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?${findParams}`;
-        console.log('Google Places Find API request:', findUrl.replace(googleKey, 'REDACTED'));
-
-        const findResponse = await fetch(findUrl);
-        const findData = await findResponse.json();
-
-        console.log('Google Places Find API response:', {
-            status: findData.status,
-            candidates: findData.candidates?.length || 0,
-            error_message: findData.error_message
-        });
-
-        if (findData.status !== 'OK' || !findData.candidates?.[0]?.place_id) {
-            console.log(`No Google Place match found for: ${radarPlace.name}`);
-            return null;
-        }
-
-        // If we only need basic details, return just the place_id
-        if (detailLevel === CACHE_KEYS.LEVELS.BASIC) {
-            return { place_id: findData.candidates[0].place_id };
-        }
-
-        // For full details, make a details request
-        const detailsParams = new URLSearchParams({
-            place_id: findData.candidates[0].place_id,
-            fields: fields,
-            key: googleKey
-        });
-
-        const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?${detailsParams}`;
-        console.log('Google Places Details API request:', detailsUrl.replace(googleKey, 'REDACTED'));
-
-        const detailsResponse = await fetch(detailsUrl);
-        const detailsData = await detailsResponse.json();
-
-        console.log('Google Places Details API response:', {
-            status: detailsData.status,
-            error_message: detailsData.error_message
-        });
-
-        if (detailsData.status === 'OK' && detailsData.result) {
-            // Add detailed logging for details response
-            if (detailLevel === CACHE_KEYS.LEVELS.FULL && detailsData?.result) {
-                console.log('Details response fields received:', {
-                    place: radarPlace.name,
-                    fields: Object.keys(detailsData.result),
-                    sample: {
-                        name: detailsData.result.name,
-                        address: detailsData.result.formatted_address,
-                        phone: detailsData.result.formatted_phone_number,
-                        rating: detailsData.result.rating
-                    }
-                });
-            }
-            return detailsData.result;
-        }
-
-        throw new Error(`Details request failed: ${detailsData.status} - ${detailsData.error_message || 'Unknown error'}`);
-
-    } catch (error) {
-        console.error('Error in findGooglePlace:', error);
-        throw error;
+    const findData = await findResponse.json();
+    if (!findData.places?.[0]?.id) {
+        console.log(`No Google Place match found for: ${name}`);
+        return null;
     }
+
+    findData?.places?.forEach(place => updateOpenNowStatus(place));
+    return findData.places;
 }
 
-// Add helper function to convert Radar place to Google-like format
-function radarToGoogleFormat(radarPlace) {
-    return {
-        place_id: null, // Will be filled in if matched
-        name: radarPlace.name,
-        geometry: {
-            location: {
-                lat: radarPlace.location.coordinates[1],
-                lng: radarPlace.location.coordinates[0]
-            }
-        },
-        radar_id: radarPlace._id,
-        types: radarPlace.categories
-    };
-}
-
-// Add this helper function at the top
-function safeJSONStringify(obj) {
-    try {
-        return JSON.stringify(obj);
-    } catch (error) {
-        console.error('JSON stringify error:', error);
-        return JSON.stringify({
-            error: 'Data serialization error',
-            message: error.message
-        });
-    }
-}
-
-function formatResults(places, detailLevel) {
-    if (detailLevel === CACHE_KEYS.LEVELS.BASIC) {
-        return {
-            radar: places.map(place => ({
-                id: place.radar._id,
-                name: place.radar.name,
-                geometry: {
-                    location: {
-                        lat: place.radar.location.coordinates[1],
-                        lng: place.radar.location.coordinates[0]
-                    }
-                },
-                categories: place.radar.categories,
-                error: place.error,
-                cache_hit: place.cache_hit
-            })),
-            google: places.map(place => ({
-                placeId_google: place.google?.place_id,
-                radar_id: place.radar._id,
-                name: place.radar.name,
-                geometry: {
-                    location: {
-                        lat: place.radar.location.coordinates[1],
-                        lng: place.radar.location.coordinates[0]
-                    }
-                },
-                types: place.radar.categories,
-                error: place.error,
-                cache_hit: place.cache_hit
-            }))
-        };
-    }
-
-    // Full detail format
-    const radarFormatted = places.map(place => ({
-        id: place.radar._id,
-        name: place.radar.name,
-        location: {
-            lat: place.radar.location.latitude,
-            lng: place.radar.location.longitude
-        },
-        address: place.radar.formattedAddress,
-        categories: place.radar.categories,
-        chain: place.radar.chain,
-        metadata: place.radar.metadata || {},
-        cache_hit: place.cache_hit
-    }));
-
-    const googleFormatted = places
-        .filter(place => place.google && place.matched)
-        .map(place => ({
-            placeId_google: place.google.placeId_google,
-            radar_id: place.radar._id,
-            ...place.google.details,
-            cache_hit: place.cache_hit
-        }));
-
-    return {
-        radar: radarFormatted,
-        google: googleFormatted
-    };
-}
-
-function updateOpenNowStatus(place) {
-    if (!place?.opening_hours?.periods) {
-        delete place.opening_hours;
-        delete place.current_opening_hours;
-        return place;
-    }
-
-    // Use place's UTC offset instead of hardcoding EST
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const localTime = new Date(utc + (place.utc_offset * 60000));
-
-    const dayOfWeek = localTime.getDay();
-    const currentTime = localTime.getHours().toString().padStart(2, '0') + 
-                       localTime.getMinutes().toString().padStart(2, '0');
-
-    // Check if it's open 24/7
-    if (place.opening_hours.periods.length === 1 && 
-        place.opening_hours.periods[0].open.time === "0000" && 
-        !place.opening_hours.periods[0].close) {
-        place.opening_hours.open_now = true;
-        if (place.current_opening_hours) {
-            place.current_opening_hours.open_now = true;
-        }
-        return place;
-    }
-
-    let isOpen = false;
-    for (const period of place.opening_hours.periods) {
-        const openDay = period.open.day;
-        const openTime = period.open.time;
-        const closeDay = period.close?.day;
-        const closeTime = period.close?.time;
-
-        if (!closeDay || !closeTime) continue;
-
-        if (openDay === dayOfWeek && currentTime >= openTime) {
-            if (closeDay === dayOfWeek) {
-                isOpen = currentTime < closeTime;
-            } else {
-                isOpen = true; // Still open if closing is tomorrow
-            }
-        } else if (closeDay === dayOfWeek && currentTime < closeTime) {
-            if (openDay === (dayOfWeek + 6) % 7) {
-                isOpen = true; // Opened yesterday, still open
-            }
-        }
-
-        if (isOpen) break;
-    }
-
-    place.opening_hours.open_now = isOpen;
-    if (place.current_opening_hours) {
-        place.current_opening_hours.open_now = isOpen;
-    }
-
-    return place;
-}
-
-// Update getCachedGooglePlace to use Google place_id for caching
-async function getCachedGooglePlace(radarPlace, detailLevel, googleKey, env, noCache = false) {
-    console.log(`getCachedGooglePlace for ${radarPlace.name}:`, {
-        detailLevel,
-        noCache
-    });
-    
-    // First get the Google place_id
-    const googlePlace = await findGooglePlace(radarPlace, detailLevel, googleKey);
-    if (!googlePlace?.place_id) {
-        return {
-            radar: radarPlace,
-            google: null,
-            matched: false,
-            cache_hit: false
-        };
-    }
-
-    // Now use the Google place_id for caching
-    if (detailLevel === CACHE_KEYS.LEVELS.BASIC) {
-        return {
-            radar: radarPlace,
-            google: {
-                place_id: googlePlace.place_id
-            },
-            matched: true,
-            cache_hit: false
-        };
-    }
-
-    // For full details, use getPlaceDetailsFromGoogleId which handles its own caching
-    const details = await getPlaceDetailsFromGoogleId(googlePlace.place_id, googleKey, env, detailLevel);
-    
-    return {
-        radar: radarPlace,
-        google: {
-            place_id: googlePlace.place_id,
-            details: details
-        },
-        matched: true,
-        cache_hit: details.cache_hit
-    };
-}
-
-// Update getUncachedGooglePlace to properly handle full details
-async function getUncachedGooglePlace(radarPlace, detailLevel, googleKey) {
-    try {
-        const googlePlace = await findGooglePlace(radarPlace, detailLevel, googleKey);
-        
-        if (googlePlace) {
-            // For basic level, only store place_id
-            if (detailLevel === CACHE_KEYS.LEVELS.BASIC) {
-                return {
-                    radar: radarPlace,
-                    google: {
-                        place_id: googlePlace.place_id
-                    },
-                    matched: true,
-                    cache_hit: false
-                };
-            } else {
-                // For full level, store complete details and update open_now status
-                const details = updateOpenNowStatus(googlePlace);
-                return {
-                    radar: radarPlace,
-                    google: {
-                        place_id: googlePlace.place_id,
-                        details: details
-                    },
-                    matched: true,
-                    cache_hit: false
-                };
-            }
-        } else {
-            // No Google match found
-            return {
-                radar: radarPlace,
-                google: null,
-                matched: false,
-                cache_hit: false
-            };
-        }
-    } catch (error) {
-        console.error(`Error processing place ${radarPlace.name}:`, error);
-        return {
-            radar: radarPlace,
-            google: null,
-            error: error.message,
-            matched: false,
-            cache_hit: false
-        };
-    }
-}
 
 // Add this function to get full details from a Google Place ID
-async function getPlaceDetailsFromGoogleId(placeId, googleKey, env, detailLevel = 'full') {
-    const cacheKey = `${API_VERSION}:${CACHE_KEYS.PREFIX}:${placeId}:${detailLevel}`;
+async function getPlaceDetailsCached({placeId, googleKey, detailLevel = 'full', cacheOnly}, env) {
+    const cacheKey = `${API_VERSION}:Fields-${FIELDS_HASH}:${CACHE_KEYS.PREFIX}:${placeId}:${detailLevel}`;
     
     // Try cache first
     try {
@@ -627,35 +296,10 @@ async function getPlaceDetailsFromGoogleId(placeId, googleKey, env, detailLevel 
         console.error('Cache read error:', error);
     }
 
+    if (cacheOnly) return null;
+
     // If not in cache or basic details requested, fetch from Google
-    const fields = detailLevel === CACHE_KEYS.LEVELS.BASIC ? 
-        'place_id' : 
-        PLACE_DETAIL_FIELDS.join(',');
-
-    const searchParams = new URLSearchParams({
-        place_id: placeId,
-        fields,
-        key: googleKey
-    });
-
-    console.log('Fetching place details:', { placeId, detailLevel, fields });
-
-    const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?${searchParams}`
-    );
-
-    if (!response.ok) {
-        throw new Error(`Google Places API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (data.status !== 'OK') {
-        throw new Error(`Google Places API error: ${data.status} - ${data.error_message || 'Unknown error'}`);
-    }
-
-    const result = detailLevel === CACHE_KEYS.LEVELS.BASIC ? 
-        { place_id: data.result.place_id } : 
-        updateOpenNowStatus(data.result);
+    const result = await findGooglePlacesById({placeId, googleKey});
 
     // Cache the result
     try {
@@ -673,6 +317,7 @@ async function getPlaceDetailsFromGoogleId(placeId, googleKey, env, detailLevel 
     };
 }
 
+
 // Instead, move the response formatting into the fetch handler where we have access to the variables
 export default {
     async fetch(request, env, ctx) {
@@ -682,7 +327,8 @@ export default {
 
         try {
             // Basic auth check
-            const authKey = request.headers.get('X-API-Key');
+            const url = new URL(request.url);
+            const authKey = request.headers.get('X-API-Key') || url.searchParams.get('apiKey');
             if (false) //debugging
             if (!authKey || authKey !== env.SECURE_API_KEY_PLACES) {
                 return new Response(JSON.stringify({
@@ -695,14 +341,28 @@ export default {
                 });
             }
 
-            const url = new URL(request.url);
-            const placeId = url.searchParams.get('placeId');
+            let placeId = url.searchParams.get('placeId'), place;
             const noCache = url.searchParams.get('noCache') === 'true'; //debugging
-
+            const placeName = url.searchParams.get('name');
+            const lat = parseFloat(url.searchParams.get('lat'));
+            const lng = parseFloat(url.searchParams.get('lng'));
+            if (placeName) {
+                const detailLevel = url.searchParams.get('detailLevel') || 'basic';
+                place = await findGooglePlacesByName({name:placeName, lat, lng, detailLevel, googleKey: env.GOOGLE_PLACES_API_KEY});
+                placeId = place?.[0]?.id;
+                if (!placeId) {
+                    return new Response(JSON.stringify({
+                        error: 'No place found',
+                        message: 'No place found for the given name and location',
+                        status: 404
+                    }), { status: 404 });
+                }
+            }
+            
             if (placeId) {
                 // Handle place details request
                 const detailLevel = url.searchParams.get('detailLevel') || 'full';
-                const details = await getPlaceDetailsFromGoogleId(placeId, env.GOOGLE_PLACES_API_KEY, env, detailLevel);
+                const details = place || await getPlaceDetailsCached({placeId, googleKey:env.GOOGLE_PLACES_API_KEY, detailLevel}, env);
                 return new Response(JSON.stringify({
                     status: 'success',
                     cache_hit: details.cache_hit,
@@ -712,23 +372,28 @@ export default {
                 });
             }
 
-            const lat = parseFloat(url.searchParams.get('lat'));
-            const lng = parseFloat(url.searchParams.get('lng'));
+            let revgeo = url.searchParams.get('reverseGeocode')
+            if (revgeo) {
+                let result
+                switch (revgeo) {
+                    case 'mapbox': result = await reverseGeocode({ lat, lng, mapboxKey:env.MAPBOX_API_KEY }, env); break;
+                    case 'google': result = await reverseGeocodeGoogle({ lat, lng, googleKey:env.GOOGLE_PLACES_API_KEY }, env); break;
+                    case 'radar': result = await reverseGeocodeRadar({ lat, lng, radarKey:env.RADAR_API_KEY }, env); break;
+                }
+                if (!result) throw new Error('No reverse geocoding result');
+                return new Response(JSON.stringify({
+                    status: 'success',
+                    result: result
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+
             const radius = parseFloat(url.searchParams.get('radius') || '500');
             const detailLevel = url.searchParams.get('detailLevel') || 'full';
             const type = url.searchParams.get('type');
             const keywords = url.searchParams.getAll('keyword');
-            const limit = parseInt(url.searchParams.get('limit') || 20);
-
-            console.log('Search params:', {
-                lat,
-                lng,
-                radius,
-                detailLevel,
-                type,
-                keywords,
-                limit
-            });
+            const limit = parseInt(url.searchParams.get('limit') || 100);
 
             if (isNaN(lat) || isNaN(lng) || isNaN(radius)) {
                 return new Response(JSON.stringify({
@@ -743,58 +408,38 @@ export default {
             }
 
             // Get Radar places with error handling
-            const searchResult = await searchRadarPlaces(
+            const searchResult = await getNearbyPlacesCached(
                 { lat, lng, radius, type, keywords, limit }, 
-                env.RADAR_API_KEY,
                 env
             );
 
-            // Ensure we have valid places array
-            const radarPlaces = searchResult?.places || [];
-            const categories = searchResult?.categories || [];
-            const unmapped = searchResult?.unmapped || { keywords: [], types: [] };
-
             // Only process if we have places
-            if (radarPlaces.length > 0) {
+            if (searchResult?.nearby?.length > 0) {
                 // Replace the single result test with batch processing
-                const results = await Promise.all(radarPlaces.map(radarPlace => {
+                const results = searchResult.nearby
+                
+                /*
+                await Promise.all(radarPlaces.map(radarPlace => {
                     console.log(`Processing place ${radarPlace.name} with detailLevel: ${detailLevel}`);
                     return getCachedGooglePlace(radarPlace, detailLevel, env.GOOGLE_PLACES_API_KEY, env, noCache);
                 }));
+                */
 
                 const responseBody = {
                     metadata: {
                         lat: lat,
                         lng: lng,
                         radius: radius,
-                        categories: categories,
+                        nearby_cache_hit: searchResult.nearby_cache_hit || false,
                         total_results: results.length,
                         cache_hits: results.filter(r => r.cache_hit).length,
                         timestamp: new Date().toISOString()
                     },
-                    radar: [],
-                    google: results.map(r => {
-                        // Create composite ID that includes both Google and Radar IDs when available
-                        return {
-                            name: r.radar.name,
-                            geometry: {
-                                location: {
-                                    lat: r.radar.location.coordinates[1],
-                                    lng: r.radar.location.coordinates[0]
-                                }
-                            },
-                            types: r.radar.categories,
-                            place_id: r.google?.place_id,
-                            radar_id: r.radar._id,  // Always include the Radar ID separately
-                            ...(r.google?.details || {}),
-                            cache_hit: r.cache_hit,
-                            cache_type: r.google ? (r.cache_hit ? 'google' : 'google_fresh') : 'radar_only'
-                        };
-                    }).filter(Boolean)
+                    results
                 };
 
                 try {
-                    const responseString = safeJSONStringify(responseBody);
+                    const responseString = JSON.stringify(responseBody);
                     return new Response(responseString, {
                         status: 200,
                         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -817,13 +462,11 @@ export default {
                         lat: lat,
                         lng: lng,
                         radius: radius,
-                        categories: categories,
                         total_results: 0,
                         cache_hits: 0,
                         timestamp: new Date().toISOString()
                     },
-                    radar: [],
-                    google: []
+                    results: [],
                 }), {
                     status: 200,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -845,3 +488,214 @@ export default {
         }
     }
 };
+
+
+
+/* ================================
+    Helper functions
+   ================================ */
+function updateOpenNowStatus(place) {
+    if (!place?.regularOpeningHours?.periods) {
+        delete place.regularOpeningHours;
+        delete place.currentOpeningHours;
+        return place;
+    }
+
+    // Get current time in Tampa's timezone (UTC-5)
+    const now = new Date();
+    const tampaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const currentDay = tampaTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const currentHour = tampaTime.getHours();
+    const currentMinute = tampaTime.getMinutes();
+
+    // Check if place data exists and has opening hours
+    if (!place.regularOpeningHours.periods) {
+        console.error('No opening hours data available');
+        return;
+    }
+
+    const periods = place.regularOpeningHours.periods;
+    let isOpen = false;
+
+    // Check each period
+    for (const period of periods) {
+        // Handle 24-hour case (no close time specified)
+        if (!period.close) {
+            isOpen = true;
+            break;
+        }
+
+        const openDay = period.open.day;
+        const openHour = period.open.hour;
+        const openMinute = period.open.minute;
+        const closeDay = period.close.day;
+        const closeHour = period.close.hour;
+        const closeMinute = period.close.minute;
+
+        // Convert times to comparable minutes since start of week
+        let currentTime = (currentDay * 1440) + (currentHour * 60) + currentMinute;
+        const openTime = (openDay * 1440) + (openHour * 60) + openMinute;
+        let closeTime = (closeDay * 1440) + (closeHour * 60) + closeMinute;
+
+        // Handle cases where closing time is on the next day
+        if (closeTime < openTime) {
+            closeTime += 7 * 1440; // Add a week's worth of minutes
+            if (currentTime < openTime) {
+                // If we're before opening time, add a week to current time for comparison
+                currentTime += 7 * 1440;
+            }
+        }
+
+        if (currentTime >= openTime && currentTime < closeTime) {
+            isOpen = true;
+            break;
+        }
+    }
+
+    place.regularOpeningHours.open_now = isOpen;
+    if (place.currentOpeningHours) {
+        place.currentOpeningHours.open_now = isOpen;
+    }
+
+    return place;
+}
+
+
+async function reverseGeocode({ lat, lng, mapboxKey }, env) {
+    const endpoint = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json`;
+    const url = new URL(endpoint);
+    
+    // Add query parameters
+    url.searchParams.append('access_token', env.MAPBOX_API_KEY);
+    url.searchParams.append('types', 'address,place,neighborhood');
+    url.searchParams.append('limit', '1');
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Mapbox API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.features || data.features.length === 0) {
+            return null;
+        }
+
+        // Return formatted address data
+        const feature = data.features[0];
+        return {
+            formatted_address: feature.place_name,
+            location: {
+                lat: feature.center[1],
+                lng: feature.center[0]
+            },
+            place_type: feature.place_type[0],
+            context: feature.context || [],
+            raw: feature
+        };
+    } catch (error) {
+        console.error('Reverse geocoding error:', error);
+        throw error;
+    }
+}
+
+
+async function reverseGeocodeGoogle({ lat, lng, googleKey }) {
+    const endpoint = 'https://places.googleapis.com/v1/places:searchNearby';
+    const requestBody = {
+        locationRestriction: {
+            circle: {
+                center: {
+                    latitude: lat,
+                    longitude: lng
+                },
+                radius: 50.0 // 50 meters radius to get closest match
+            }
+        },
+        maxResultCount: 1
+    };
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': googleKey,
+                'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.types,places.addressComponents'
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Google Places API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.places || data.places.length === 0) {
+            return null;
+        }
+
+        const place = data.places[0];
+        return {
+            formatted_address: place.formattedAddress,
+            name: place.displayName?.text,
+            location: {
+                lat: place.location?.latitude,
+                lng: place.location?.longitude
+            },
+            types: place.types,
+            address_components: place.addressComponents,
+            raw: place
+        };
+    } catch (error) {
+        console.error('Google reverse geocoding error:', error);
+        throw error;
+    }
+}
+
+async function reverseGeocodeRadar({ lat, lng, radarKey }) {
+    const endpoint = `https://api.radar.io/v1/geocode/reverse`;
+    const url = new URL(endpoint);
+    
+    // Add query parameters
+    url.searchParams.append('coordinates', `${lat},${lng}`);
+
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': radarKey
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Radar API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.addresses || data.addresses.length === 0) {
+            return null;
+        }
+
+        const address = data.addresses[0];
+        return {
+            formatted_address: address.formattedAddress,
+            location: {
+                lat: address.latitude,
+                lng: address.longitude
+            },
+            country: address.country,
+            countryCode: address.countryCode,
+            state: address.state,
+            stateCode: address.stateCode,
+            city: address.city,
+            postalCode: address.postalCode,
+            raw: address
+        };
+    } catch (error) {
+        console.error('Radar reverse geocoding error:', error);
+        throw error;
+    }
+}
