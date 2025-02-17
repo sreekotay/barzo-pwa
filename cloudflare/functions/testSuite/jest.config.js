@@ -4,5 +4,8 @@ module.exports = {
         '^.+\\.jsx?$': 'babel-jest'
     },
     testMatch: ['**/testSuite/**/*.test.js'],
-    setupFiles: ['./testSuite/setup.js']
+    setupFiles: ['./testSuite/setup.js'],
+    testEnvironmentOptions: {
+        env: process.env
+    }
 }; 

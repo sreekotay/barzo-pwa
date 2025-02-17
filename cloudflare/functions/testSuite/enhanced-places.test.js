@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
 const mockEnv = {
-    SECURE_API_KEY_PLACES: 'test-api-key',
-    GOOGLE_PLACES_API_KEY: 'google-api-key',
-    MAPBOX_API_KEY: 'mapbox-api-key',
-    RADAR_API_KEY: 'radar-api-key',
-    PLACES_KV: {
-        get: jest.fn(),
-        put: jest.fn()
-    }
+    // Use environment variables from .dev.vars
+    SECURE_API_KEY_PLACES: process.env.SECURE_API_KEY_PLACES,
+    GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY,
+    MAPBOX_API_KEY: process.env.MAPBOX_API_KEY,
+    RADAR_API_KEY: process.env.RADAR_API_KEY,
+    // Mock KV namespace
+    PLACES_KV: global.PLACES_KV
 };
 
 // Mock fetch globally
