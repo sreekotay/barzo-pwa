@@ -171,7 +171,7 @@ async function fillNearbyPlaces(results, env) {
     if (!results?.nearby) return results;
     results.nearby = await Promise.all(results.nearby.map(async (result) => {
         return await getPlaceDetailsCached({
-            placeId:result.id, googleKey:env.GOOGLE_PLACES_API_KEY, detailLevel:'full', cacheOnly:true
+            placeId:result.id, detailLevel:'full', cacheOnly:true
         }, env) || result
     }));
 
@@ -179,7 +179,7 @@ async function fillNearbyPlaces(results, env) {
     results.nearby = await Promise.all(results.nearby.map(async (result) => {
         if (result.name || counter++ >= max) return result;
         const r = await getPlaceDetailsCached({
-            placeId:result.id, googleKey:env.GOOGLE_PLACES_API_KEY, detailLevel:'full'
+            placeId:result.id, detailLevel:'full'
         }, env)
         return r
     }));
@@ -203,9 +203,8 @@ async function getNearbyPlacesCached({type, keywords, lat, lng, radius}, env) {
 
     const nearby = await findGooglePlacesByName({
                     name:keywords.join(), lat, lng, radius, 
-                    detailLevel:'basic', 
-                    googleKey:env.GOOGLE_PLACES_API_KEY
-                });
+                    detailLevel:'basic'
+                }, env);
 
     // Cache the raw Radar results
     try {
@@ -230,12 +229,12 @@ async function getNearbyPlacesCached({type, keywords, lat, lng, radius}, env) {
     }, env);
 }
 
-async function findGooglePlacesById({placeId, googleKey}) {
+async function findGooglePlacesById({placeId}, env) {
     const findUrl = `https://places.googleapis.com/v1/places/${placeId}`;
     const findResponse = await fetch(findUrl, {
         headers: {
             'Content-Type': 'application/json',
-            'X-Goog-Api-Key': googleKey,
+            'X-Goog-Api-Key': env.GOOGLE_PLACES_API_KEY,
             'X-Goog-FieldMask': PLACE_DETAIL_FIELDS_DETAILS.join(',')
         }
     });
@@ -247,7 +246,7 @@ async function findGooglePlacesById({placeId, googleKey}) {
     return updateOpenNowStatus(findData);
 }
 
-async function findGooglePlacesByName({name, lat, lng, radius, detailLevel, googleKey, type}) {    
+async function findGooglePlacesByName({name, lat, lng, radius, detailLevel, type}, env) {    
     // First try to find the place
     const requestBody = {textQuery: `${name || ''}`.trim()};
     if (lat && lng) requestBody.locationBias = {circle: {center: {latitude: lat, longitude: lng}, radius: radius ? 50.0 : 500.0}};
@@ -258,8 +257,8 @@ async function findGooglePlacesByName({name, lat, lng, radius, detailLevel, goog
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-Goog-Api-Key': googleKey,
-            'X-Goog-FieldMask': detailLevel === CACHE_KEYS.LEVELS.BASIC && 1 ? 
+            'X-Goog-Api-Key': env.GOOGLE_PLACES_API_KEY,
+            'X-Goog-FieldMask': detailLevel === CACHE_KEYS.LEVELS.BASIC || 1 ?  //always force basic for now
                 'places.id,nextPageToken' : 
                 PLACE_DETAIL_FIELDS_NEW.join(',')
         },
@@ -278,7 +277,7 @@ async function findGooglePlacesByName({name, lat, lng, radius, detailLevel, goog
 
 
 // Add this function to get full details from a Google Place ID
-async function getPlaceDetailsCached({placeId, googleKey, detailLevel = 'full', cacheOnly}, env) {
+async function getPlaceDetailsCached({placeId, detailLevel = 'full', cacheOnly}, env) {
     const cacheKey = `${API_VERSION}:Fields-${FIELDS_HASH}:${CACHE_KEYS.PREFIX}:${placeId}:${detailLevel}`;
     
     // Try cache first
@@ -299,7 +298,7 @@ async function getPlaceDetailsCached({placeId, googleKey, detailLevel = 'full', 
     if (cacheOnly) return null;
 
     // If not in cache or basic details requested, fetch from Google
-    const result = await findGooglePlacesById({placeId, googleKey});
+    const result = await findGooglePlacesById({placeId}, env);
 
     // Cache the result
     try {
@@ -317,6 +316,17 @@ async function getPlaceDetailsCached({placeId, googleKey, detailLevel = 'full', 
     };
 }
 
+//function to geocode a location
+async function geocode({ name, mapboxKey }) {
+    const endpoint = `https://api.mapbox.com/geocoding/v5/mapbox.places/${name}.json`;
+    const url = new URL(endpoint);
+    url.searchParams.append('access_token', mapboxKey);
+    //url.searchParams.append('types', 'address,place,neighborhood');
+    url.searchParams.append('limit', '10');
+    const response = await fetch(url);
+    const data = await response.json();
+    return data.features;
+}
 
 // Instead, move the response formatting into the fetch handler where we have access to the variables
 export default {
@@ -346,9 +356,26 @@ export default {
             const placeName = url.searchParams.get('name');
             const lat = parseFloat(url.searchParams.get('lat'));
             const lng = parseFloat(url.searchParams.get('lng'));
+            const geo = url.searchParams.get('geocode');
+
+            if (geo && placeName) {
+                console.error('geocode', geo);
+                let result;
+                switch (geo) {
+                    case 'mapbox': result = await geocode({ placeName, mapboxKey:env.MAPBOX_API_KEY }, env); break;
+                }
+                if (!result) throw new Error('No geocoding result');
+                return new Response(JSON.stringify({
+                    status: 'success',
+                    result: result
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+
             if (placeName) {
                 const detailLevel = url.searchParams.get('detailLevel') || 'basic';
-                place = await findGooglePlacesByName({name:placeName, lat, lng, detailLevel, googleKey: env.GOOGLE_PLACES_API_KEY});
+                place = await findGooglePlacesByName({name:placeName, lat, lng, detailLevel}, env);
                 placeId = place?.[0]?.id;
                 if (!placeId) {
                     return new Response(JSON.stringify({
@@ -362,11 +389,11 @@ export default {
             if (placeId) {
                 // Handle place details request
                 const detailLevel = url.searchParams.get('detailLevel') || 'full';
-                const details = place || await getPlaceDetailsCached({placeId, googleKey:env.GOOGLE_PLACES_API_KEY, detailLevel}, env);
+                const details = place || await getPlaceDetailsCached({placeId, detailLevel}, env);
                 return new Response(JSON.stringify({
                     status: 'success',
                     cache_hit: details.cache_hit,
-                    result: details
+                    results: details
                 }), {
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
                 });
@@ -376,9 +403,9 @@ export default {
             if (revgeo) {
                 let result
                 switch (revgeo) {
-                    case 'mapbox': result = await reverseGeocode({ lat, lng, mapboxKey:env.MAPBOX_API_KEY }, env); break;
-                    case 'google': result = await reverseGeocodeGoogle({ lat, lng, googleKey:env.GOOGLE_PLACES_API_KEY }, env); break;
-                    case 'radar': result = await reverseGeocodeRadar({ lat, lng, radarKey:env.RADAR_API_KEY }, env); break;
+                    case 'mapbox': result = await reverseGeocodeMapbox({ lat, lng }, env); break;
+                    case 'google': result = await reverseGeocodeGoogle({ lat, lng,  }, env); break;
+                    case 'radar': result = await reverseGeocodeRadar({ lat, lng}, env); break;
                 }
                 if (!result) throw new Error('No reverse geocoding result');
                 return new Response(JSON.stringify({
@@ -561,7 +588,7 @@ function updateOpenNowStatus(place) {
 }
 
 
-async function reverseGeocode({ lat, lng, mapboxKey }, env) {
+async function reverseGeocodeMapbox({ lat, lng }, env) {
     const endpoint = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json`;
     const url = new URL(endpoint);
     
@@ -601,7 +628,7 @@ async function reverseGeocode({ lat, lng, mapboxKey }, env) {
 }
 
 
-async function reverseGeocodeGoogle({ lat, lng, googleKey }) {
+async function reverseGeocodeGoogle({ lat, lng }) {
     const endpoint = 'https://places.googleapis.com/v1/places:searchNearby';
     const requestBody = {
         locationRestriction: {
@@ -621,7 +648,7 @@ async function reverseGeocodeGoogle({ lat, lng, googleKey }) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Goog-Api-Key': googleKey,
+                'X-Goog-Api-Key': env.GOOGLE_PLACES_API_KEY,
                 'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.types,places.addressComponents'
             },
             body: JSON.stringify(requestBody)
@@ -655,7 +682,7 @@ async function reverseGeocodeGoogle({ lat, lng, googleKey }) {
     }
 }
 
-async function reverseGeocodeRadar({ lat, lng, radarKey }) {
+async function reverseGeocodeRadar({ lat, lng }) {
     const endpoint = `https://api.radar.io/v1/geocode/reverse`;
     const url = new URL(endpoint);
     
@@ -665,7 +692,7 @@ async function reverseGeocodeRadar({ lat, lng, radarKey }) {
     try {
         const response = await fetch(url, {
             headers: {
-                'Authorization': radarKey
+                'Authorization': env.RADAR_API_KEY
             }
         });
 
