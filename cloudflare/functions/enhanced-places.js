@@ -167,13 +167,15 @@ function getNearbyCacheKey(params) {
     return `${API_VERSION}:radar:${roundedLat},${roundedLng}:${roundedRadius}${keywordsStr}${typeStr}${limitStr}`;
 }
 
-async function fillNearbyPlaces(results, env) {
+async function fillNearbyPlaces(results, detailLevel, env) {
     if (!results?.nearby) return results;
     results.nearby = await Promise.all(results.nearby.map(async (result) => {
         return await getPlaceDetailsCached({
             placeId:result.id, detailLevel:'full', cacheOnly:true
         }, env) || result
     }));
+
+    if (detailLevel==CACHE_KEYS.LEVELS.BASIC) return results;
 
     let counter = 0, max = 5;
     results.nearby = await Promise.all(results.nearby.map(async (result) => {
@@ -186,7 +188,7 @@ async function fillNearbyPlaces(results, env) {
     return results;
 }
 
-async function getNearbyPlacesCached({type, keywords, lat, lng, radius}, env) {
+async function getNearbyPlacesCached({type, keywords, lat, lng, radius, detailLevel}, env) {
     const cacheKey = getNearbyCacheKey({type, keywords, lat, lng, radius});
     try {
         const cached = await env.PLACES_KV.get(cacheKey);
@@ -195,7 +197,7 @@ async function getNearbyPlacesCached({type, keywords, lat, lng, radius}, env) {
             return fillNearbyPlaces({
                 nearby_cache_hit: true,
                 nearby: results.nearby  // Raw radar places
-            }, env);
+            }, detailLevel, env);
         }
     } catch (error) {
         console.error('Cache read error:', error);
@@ -226,7 +228,7 @@ async function getNearbyPlacesCached({type, keywords, lat, lng, radius}, env) {
 
     return fillNearbyPlaces({
         nearby          // Return raw places for processing
-    }, env);
+    }, detailLevel, env);
 }
 
 async function findGooglePlacesById({placeId}, env) {
@@ -436,7 +438,7 @@ export default {
 
             // Get Radar places with error handling
             const searchResult = await getNearbyPlacesCached(
-                { lat, lng, radius, type, keywords, limit }, 
+                { lat, lng, radius, type, keywords, limit, detailLevel }, 
                 env
             );
 
