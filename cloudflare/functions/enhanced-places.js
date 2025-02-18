@@ -195,7 +195,7 @@ async function getNearbyPlacesCached({type, keywords, lat, lng, radius, detailLe
         if (cached) {
             const results = JSON.parse(cached);
             return fillNearbyPlaces({
-                nearby_cache_hit: true,
+                nearbyCacheHit: true,
                 nearby: results.nearby  // Raw radar places
             }, detailLevel, env);
         }
@@ -287,7 +287,7 @@ async function getPlaceDetailsCached({placeId, detailLevel = 'full', cacheOnly},
         const cached = await env.PLACES_KV.get(cacheKey);
         if (cached) {
             const result = JSON.parse(cached);
-            result.cache_hit = true;
+            result.cacheHit = true;
             if (detailLevel === CACHE_KEYS.LEVELS.FULL) {
                 return updateOpenNowStatus(result);
             }
@@ -313,8 +313,8 @@ async function getPlaceDetailsCached({placeId, detailLevel = 'full', cacheOnly},
 
     return {
         ...result,
-        cache_hit: false,
-        cache_type: 'google_fresh'
+        cacheHit: false,
+        cacheType: 'google_fresh'
     };
 }
 
@@ -330,7 +330,36 @@ async function geocode({ name, mapboxKey }) {
     return data.features;
 }
 
-// Instead, move the response formatting into the fetch handler where we have access to the variables
+// Update createResponse helper
+function createResponse(data, status = 200) {
+  const response = {
+    success: status >= 200 && status < 300,
+    data,
+    timestamp: new Date().toISOString(),
+    debug: {
+      status,
+      apiVersion: API_VERSION
+    }
+  };
+
+  if (!response.success) {
+    response.error = {
+      message: data.message || 'Unknown error',
+      code: status,
+      validationErrors: data.validationErrors  // Changed from validation_errors
+    };
+    delete response.data;
+  }
+
+  return new Response(JSON.stringify(response), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
+}
+
+/* ================================
+    Main worker fetch handler
+   ================================ */
 export default {
     async fetch(request, env, ctx) {
         if (request.method === 'OPTIONS') {
@@ -341,20 +370,19 @@ export default {
             // Basic auth check
             const url = new URL(request.url);
             const authKey = request.headers.get('X-API-Key') || url.searchParams.get('apiKey');
-            if (false) //debugging
-            if (!authKey || authKey !== env.SECURE_API_KEY_PLACES) {
-                return new Response(JSON.stringify({
-                    error: 'Unauthorized',
-                    message: 'Missing or invalid API Key',
-                    status: 403
-                }), {
-                    status: 403,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                });
+            
+            // Skip auth for localhost
+            const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+            if (!isLocalhost && (!authKey || authKey !== env.SECURE_API_KEY_PLACES)) {
+                return createResponse({
+                    message: 'Missing or invalid API Key'
+                }, 403);
             }
 
-            let placeId = url.searchParams.get('placeId'), place;
-            const noCache = url.searchParams.get('noCache') === 'true'; //debugging
+            // Get initial parameters
+            let placeId = url.searchParams.get('placeId');  // Changed to let
+            let place;
+            const noCache = url.searchParams.get('noCache') === 'true';
             const placeName = url.searchParams.get('name');
             const lat = parseFloat(url.searchParams.get('lat'));
             const lng = parseFloat(url.searchParams.get('lng'));
@@ -367,54 +395,43 @@ export default {
                     case 'mapbox': result = await geocode({ placeName, mapboxKey:env.MAPBOX_API_KEY }, env); break;
                 }
                 if (!result) throw new Error('No geocoding result');
-                return new Response(JSON.stringify({
-                    status: 'success',
-                    result: result
-                }), {
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                return createResponse({
+                    geocodingResults: result
                 });
             }
 
             if (placeName) {
                 const detailLevel = url.searchParams.get('detailLevel') || 'basic';
                 place = await findGooglePlacesByName({name:placeName, lat, lng, detailLevel}, env);
-                placeId = place?.[0]?.id;
+                placeId = place?.[0]?.id;  // Now we can assign to placeId
                 if (!placeId) {
-                    return new Response(JSON.stringify({
-                        error: 'No place found',
-                        message: 'No place found for the given name and location',
-                        status: 404
-                    }), { status: 404 });
+                    return createResponse({
+                        message: 'No place found for the given name and location'
+                    }, 404);
                 }
             }
             
             if (placeId) {
-                // Handle place details request
                 const detailLevel = url.searchParams.get('detailLevel') || 'full';
                 const details = place || await getPlaceDetailsCached({placeId, detailLevel}, env);
-                return new Response(JSON.stringify({
-                    status: 'success',
-                    cache_hit: details.cache_hit,
-                    results: details
-                }), {
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                return createResponse({
+                    placeDetails: details,
+                    cacheHit: details.cacheHit
                 });
             }
 
             let revgeo = url.searchParams.get('reverseGeocode')
             if (revgeo) {
-                let result
+                let result;
                 switch (revgeo) {
                     case 'mapbox': result = await reverseGeocodeMapbox({ lat, lng }, env); break;
-                    case 'google': result = await reverseGeocodeGoogle({ lat, lng,  }, env); break;
+                    case 'google': result = await reverseGeocodeGoogle({ lat, lng }, env); break;
                     case 'radar': result = await reverseGeocodeRadar({ lat, lng}, env); break;
                 }
                 if (!result) throw new Error('No reverse geocoding result');
-                return new Response(JSON.stringify({
-                    status: 'success',
-                    result: result
-                }), {
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                return createResponse({
+                    reverseGeocodingResults: result,
+                    provider: revgeo
                 });
             }
 
@@ -425,15 +442,10 @@ export default {
             const limit = parseInt(url.searchParams.get('limit') || 100);
 
             if (isNaN(lat) || isNaN(lng) || isNaN(radius)) {
-                return new Response(JSON.stringify({
-                    error: 'Invalid Parameters',
+                return createResponse({
                     message: 'latitude, longitude, and radius must be valid numbers',
-                    status: 400,
-                    params: { lat, lng, radius }
-                }), {
-                    status: 400,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                });
+                    validationErrors: { lat, lng, radius }
+                }, 400);
             }
 
             // Get Radar places with error handling
@@ -444,76 +456,39 @@ export default {
 
             // Only process if we have places
             if (searchResult?.nearby?.length > 0) {
-                // Replace the single result test with batch processing
-                const results = searchResult.nearby
+                const results = searchResult.nearby;
                 
-                /*
-                await Promise.all(radarPlaces.map(radarPlace => {
-                    console.log(`Processing place ${radarPlace.name} with detailLevel: ${detailLevel}`);
-                    return getCachedGooglePlace(radarPlace, detailLevel, env.GOOGLE_PLACES_API_KEY, env, noCache);
-                }));
-                */
-
-                const responseBody = {
+                return createResponse({
+                    nearbyPlaces: results,
                     metadata: {
-                        lat: lat,
-                        lng: lng,
-                        radius: radius,
-                        nearby_cache_hit: searchResult.nearby_cache_hit || false,
-                        total_results: results.length,
-                        cache_hits: results.filter(r => r.cache_hit).length,
-                        timestamp: new Date().toISOString()
-                    },
-                    results
-                };
-
-                try {
-                    const responseString = JSON.stringify(responseBody);
-                    return new Response(responseString, {
-                        status: 200,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                    });
-                } catch (error) {
-                    console.error('Response creation error:', error);
-                    return new Response(JSON.stringify({
-                        status: 'error',
-                        error: 'Response Creation Error',
-                        message: error.message
-                    }), {
-                        status: 500,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                    });
-                }
+                        lat,
+                        lng,
+                        radius,
+                        totalResults: results.length,
+                        cacheHits: results.filter(r => r.cacheHit).length,
+                        nearbyCacheHit: searchResult.nearbyCacheHit || false
+                    }
+                });
             } else {
-                // Return empty results if no places found
-                return new Response(JSON.stringify({
+                // Empty results response
+                return createResponse({
+                    nearbyPlaces: [],
                     metadata: {
-                        lat: lat,
-                        lng: lng,
-                        radius: radius,
-                        total_results: 0,
-                        cache_hits: 0,
-                        timestamp: new Date().toISOString()
-                    },
-                    results: [],
-                }), {
-                    status: 200,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                        lat,
+                        lng,
+                        radius,
+                        totalResults: 0,
+                        cacheHits: 0
+                    }
                 });
             }
 
         } catch (error) {
             console.error('Error details:', error);
-            return new Response(JSON.stringify({
-                status: 'error',
-                error: 'Internal Server Error',
+            return createResponse({
                 message: error.message || 'Unknown error',
-                details: error.toString(),
-                timestamp: new Date().toISOString()
-            }), {
-                status: 500,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
+                errorDetails: error.toString()
+            }, error.status || 500);
         }
     }
 };
@@ -581,9 +556,9 @@ function updateOpenNowStatus(place) {
         }
     }
 
-    place.regularOpeningHours.open_now = isOpen;
+    place.regularOpeningHours.openNow = isOpen;
     if (place.currentOpeningHours) {
-        place.currentOpeningHours.open_now = isOpen;
+        place.currentOpeningHours.openNow = isOpen;
     }
 
     return place;
@@ -614,12 +589,12 @@ async function reverseGeocodeMapbox({ lat, lng }, env) {
         // Return formatted address data
         const feature = data.features[0];
         return {
-            formatted_address: feature.place_name,
+            formattedAddress: feature.place_name,
             location: {
                 lat: feature.center[1],
                 lng: feature.center[0]
             },
-            place_type: feature.place_type[0],
+            placeType: feature.place_type[0],
             context: feature.context || [],
             raw: feature
         };
@@ -630,7 +605,7 @@ async function reverseGeocodeMapbox({ lat, lng }, env) {
 }
 
 
-async function reverseGeocodeGoogle({ lat, lng }) {
+async function reverseGeocodeGoogle({ lat, lng }, env) {
     const endpoint = 'https://places.googleapis.com/v1/places:searchNearby';
     const requestBody = {
         locationRestriction: {
@@ -668,14 +643,14 @@ async function reverseGeocodeGoogle({ lat, lng }) {
 
         const place = data.places[0];
         return {
-            formatted_address: place.formattedAddress,
+            formattedAddress: place.formattedAddress,
             name: place.displayName?.text,
             location: {
                 lat: place.location?.latitude,
                 lng: place.location?.longitude
             },
             types: place.types,
-            address_components: place.addressComponents,
+            addressComponents: place.addressComponents,
             raw: place
         };
     } catch (error) {
@@ -684,7 +659,7 @@ async function reverseGeocodeGoogle({ lat, lng }) {
     }
 }
 
-async function reverseGeocodeRadar({ lat, lng }) {
+async function reverseGeocodeRadar({ lat, lng }, env) {
     const endpoint = `https://api.radar.io/v1/geocode/reverse`;
     const url = new URL(endpoint);
     
@@ -710,7 +685,7 @@ async function reverseGeocodeRadar({ lat, lng }) {
 
         const address = data.addresses[0];
         return {
-            formatted_address: address.formattedAddress,
+            formattedAddress: address.formattedAddress,
             location: {
                 lat: address.latitude,
                 lng: address.longitude
